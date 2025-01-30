@@ -22,6 +22,8 @@ const std::vector<ServerConfig>&	ConfParser::getServers( void ) const { return _
 /*** Setter ***/
 void	ConfParser::setServers( const std::vector<ServerConfig> servers ) { _servers = servers; }
 
+/*** private helper methods ***/
+
 /**
  * @brief private method to add a server object to the class _servers vector
  * 
@@ -32,6 +34,10 @@ void	ConfParser::addServer( const ServerConfig& server )
 	_servers.push_back(server);
 }
 
+
+/**
+ * @brief main parser method for the .conf file
+ */
 void	ConfParser::parseConfigFile( void )
 {
 

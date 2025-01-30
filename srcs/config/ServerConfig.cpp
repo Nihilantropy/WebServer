@@ -61,3 +61,13 @@ void	ServerConfig::addLocation( const LocationConfig& location )
 {
 	_locations.push_back(location);
 }
+
+/*** public parser method ***/
+
+/**
+ * @brief parser method to get all server-info from .conf file
+ */
+void	ServerConfig::parseServerBlock( const std::istream& file )
+{
+
+}

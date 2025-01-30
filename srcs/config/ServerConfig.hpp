@@ -33,7 +33,7 @@ public:
 	void	setErrorPages( const std::map<int, std::string> errorPages );
 	void	setLocations( const std::vector<LocationConfig>& locations );
 
-	void	parseServerBlock( std::istream& file );
+	void	parseServerBlock( const std::istream& file );
 
 
 private:
