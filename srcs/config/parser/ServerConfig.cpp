@@ -142,6 +142,7 @@ void ServerConfig::parseServerBlock( std::ifstream& file )
 		else if (key == "server_name")
 		{
 			std::vector<std::string> names = split(line, ' ');
+			names.erase(names.begin());
 			setServerNames(names);
 		}
 		else if (key == "client_max_body_size")
@@ -152,15 +153,21 @@ void ServerConfig::parseServerBlock( std::ifstream& file )
 		}
 		else if (key == "error_page")
 		{
-			std::istringstream iss(line);
-			int errorCode;
-			std::string errorPage;
-			iss >> errorCode >> errorPage;
+			std::istringstream	iss(line);
+			std::string			keyWord;
+			int					errorCode;
+			std::string			errorPage;
+
+			iss >> keyWord >> errorCode >> errorPage;
+
+			if (iss.fail())
+				throw ConfigException("Failed to parse error_page directive");
+
 			_addErrorPage(errorCode, errorPage);
 		}
 		else if (key == "location")
 		{  
-			std::string path;
+			std::string	path;
 			iss >> path;
 			LocationConfig* location = new LocationConfig();
 			location->setPath(path);
@@ -182,25 +189,25 @@ void ServerConfig::parseServerBlock( std::ifstream& file )
 std::ostream&	operator<<( std::ostream& os, const ServerConfig& server )
 {
 	os << "    ServerConfig {" << std::endl;
-	os << "        Host: " << server.getHost() << std::endl;
-	os << "        Port: " << server.getPort() << std::endl;
+	os << "            Host: " << server.getHost() << std::endl;
+	os << "            Port: " << server.getPort() << std::endl;
 	
-	os << "        Server Names: ";
+	os << "            Server Names: ";
 	for (std::vector<std::string>::const_iterator it = server.getServerNames().begin(); it != server.getServerNames().end(); ++it)
 		os << *it << " ";
 	os << std::endl;
 
-	os << "        Client Max Body Size: " << server.getClientMaxBodySize() << std::endl;
+	os << "            Client Max Body Size: " << server.getClientMaxBodySize() << std::endl;
 	
-	os << "        Error Pages: ";
+	os << "            Error Pages: ";
 	for (std::map<int, std::string>::const_iterator it = server.getErrorPages().begin(); it != server.getErrorPages().end(); ++it)
 		os << "[" << it->first << "]: " << it->second << " ";
 	os << std::endl;
 
-	os << "        Locations: " << std::endl;
+	os << "            Locations: " << std::endl;
 	for (std::vector<LocationConfig*>::const_iterator it = server.getLocations().begin(); it != server.getLocations().end(); ++it)
 		os << "        " << **it << std::endl;
 
-	os << "    }" << std::endl;
+	os << "        }" << std::endl;
 	return os;
 }

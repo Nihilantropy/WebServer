@@ -1,14 +1,12 @@
 #pragma once
 
 #include <iostream>
-#include <cstring>
 #include <string>
 #include <vector>
-#include <cerrno>
 #include <fstream>
 #include <sstream>
-#include "../utils/utils.hpp"
-#include "../exceptions/exceptions.hpp"
+#include "../../utils/utils.hpp"
+#include "../../exceptions/exceptions.hpp"
 
 #include "ServerConfig.hpp"
 
@@ -19,9 +17,10 @@ class ServerConfig;
  * 
  * @param filename the filename to parse, including the path.
  * 
- * It will try to open the file at creation.
+ * It will try to open and parse the file at creation.
  * 
- * @throw ConfigException if the open fail.
+ * @throw OpenException if the open or parsing fail.
+ * @throw ConfigException if the parsing fail.
  */
 class ConfParser
 {
@@ -35,8 +34,6 @@ public:
 	void	setFilename( const std::string& filename );
 	void	setServers( const std::vector<ServerConfig*>& servers );
 
-    void	parseConfigFile( void );
-
 private:
 
 	std::string					_filename;
@@ -45,10 +42,11 @@ private:
 
 	void	_openFile( void );
 	void	_addServer( ServerConfig* server );
+
+	void	_parseConfigFile( void );
 	
 	ConfParser( const ConfParser& other );
 	ConfParser& operator=( const ConfParser& other );
-
 };
 
 std::ostream&	operator<<( std::ostream& os, const ConfParser& parser );

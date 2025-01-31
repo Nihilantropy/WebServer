@@ -5,6 +5,8 @@
 ConfParser::ConfParser( const std::string& filename ) : _filename(filename), _configFile(), _servers()
 {
 	_openFile();
+	_parseConfigFile();
+	_validate();
 }
 
 ConfParser::~ConfParser()
@@ -37,7 +39,7 @@ void	ConfParser::_openFile( void )
     _configFile.open(_filename.c_str());
     if (!_configFile.is_open())
 	{
-        throw ConfigException("Failed to open " + _filename + ": " + strerror(errno));
+        throw OpenException(strerror(errno));
     }
 }
 
@@ -51,12 +53,12 @@ void	ConfParser::_addServer( ServerConfig* server )
 	_servers.push_back(server);
 }
 
-/*** public parser method ***/
+/*** private parser methods ***/
 
 /**
  * @brief Main parser method for the .conf file
  */
-void	ConfParser::parseConfigFile( void )
+void	ConfParser::_parseConfigFile( void )
 {
 	std::string	line;
 	
@@ -88,7 +90,7 @@ std::ostream&	operator<<( std::ostream& os, const ConfParser& parser )
 {
 	os << "ConfParser {" << std::endl;
 	os << "    Filename: " << parser.getFilename() << std::endl;
-	os << "    Servers: " << std::endl;
+	os << "        Servers: " << std::endl;
 
 	for (std::vector<ServerConfig*>::const_iterator it = parser.getServers().begin(); it != parser.getServers().end(); ++it)
 		os << "    " << **it << std::endl;

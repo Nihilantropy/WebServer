@@ -5,8 +5,8 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
-#include "../utils/utils.hpp"
-#include "../exceptions/exceptions.hpp"
+#include "../../utils/utils.hpp"
+#include "../../exceptions/exceptions.hpp"
 
 /**
  * @brief class to store location-specific info

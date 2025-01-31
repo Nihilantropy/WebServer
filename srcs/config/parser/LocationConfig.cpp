@@ -112,27 +112,27 @@ void LocationConfig::parseLocationBlock( std::ifstream& file )
  */
 std::ostream&	operator<<( std::ostream& os, const LocationConfig& location )
 {
-	os << "            LocationConfig {" << std::endl;
-	os << "                Path: " << location.getPath() << std::endl;
-	os << "                Root: " << location.getRoot() << std::endl;
+	os << "        LocationConfig {" << std::endl;
+	os << "                    Path: " << location.getPath() << std::endl;
+	os << "                    Root: " << location.getRoot() << std::endl;
 
-	os << "                Allowed Methods: ";
+	os << "                    Allowed Methods: ";
 	for (std::vector<std::string>::const_iterator it = location.getAllowedMethods().begin(); it != location.getAllowedMethods().end(); ++it)
 		os << *it << " ";
 	os << std::endl;
 
-	os << "                Index: " << location.getIndex() << std::endl;
-	os << "                AutoIndex: " << location.getAutoIndex() << std::endl;
-	os << "                CGI Path: " << location.getCgiPath() << std::endl;
+	os << "                    Index: " << location.getIndex() << std::endl;
+	os << "                    AutoIndex: " << location.getAutoIndex() << std::endl;
+	os << "                    CGI Path: " << location.getCgiPath() << std::endl;
 
-	os << "                CGI Extensions: ";
+	os << "                    CGI Extensions: ";
 	for (std::vector<std::string>::const_iterator it = location.getCgiExtentions().begin(); it != location.getCgiExtentions().end(); ++it)
 		os << *it << " ";
 	os << std::endl;
 
-	os << "                Upload Directory: " << location.getUploadDir() << std::endl;
-	os << "                Redirection: " << location.getRedirection() << std::endl;
+	os << "                    Upload Directory: " << location.getUploadDir() << std::endl;
+	os << "                    Redirection: " << location.getRedirection() << std::endl;
 
-	os << "            }" << std::endl;
+	os << "                }" << std::endl;
 	return os;
 }

@@ -1,17 +1,17 @@
-#include "ConfParser.hpp"
+#include "config/parser/ConfParser.hpp"
 #include <iostream>
 
 int main(int argc, char **argv)
 {
 	if (argc != 2)
 		return 1;
-	(void)argv;
+
+	std::string	confFile(argv[1]);
 	
 	try
 	{
-		ConfParser parser("config/webserv.conf");
+		ConfParser parser(confFile);
 
-		parser.parseConfigFile();
 		std::cout << parser << std::endl;
 
 	}

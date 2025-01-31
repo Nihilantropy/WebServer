@@ -6,8 +6,8 @@
 #include <vector>
 #include <sstream>
 #include <cstdlib>
-#include "../utils/utils.hpp"
-#include "../exceptions/exceptions.hpp"
+#include "../../utils/utils.hpp"
+#include "../../exceptions/exceptions.hpp"
 
 #include "LocationConfig.hpp"
 
@@ -44,7 +44,7 @@ public:
 private:
 
 	std::string						_host;
-	int								_port;
+	int								_port;  // change this must handle multiple ports
 	std::vector<std::string>		_serverNames;
 	size_t							_clientMaxBodySize;
 	std::map<int, std::string>		_errorPages;

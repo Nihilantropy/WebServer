@@ -7,7 +7,7 @@ INC_DIR = include
 OBJ_DIR = obj
 
 # Find all .cpp files in the srcs directory and subdirectories
-SRCS = $(wildcard $(SRC_DIR)/**/*.cpp)
+SRCS = $(shell find $(SRC_DIR) -type f -name "*.cpp")
 
 # Create a list of corresponding .o files in the obj directory
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
