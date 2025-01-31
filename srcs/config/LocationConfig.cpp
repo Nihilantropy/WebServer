@@ -1,8 +1,8 @@
 #include "LocationConfig.hpp"
 
 LocationConfig::LocationConfig()
-	: _path(NULL), _root(NULL), _allowedMethods(NULL), _index(NULL),
-		_autoIndex(false), _cgiPath(NULL), _cgiExtentions(NULL), _uploadDir(NULL), _redirection(NULL) {}
+	: _path(), _root(), _allowedMethods(), _index(),
+		_autoIndex(false), _cgiPath(), _cgiExtentions(), _uploadDir(), _redirection() {}
 
 LocationConfig::~LocationConfig() {}
 
@@ -44,7 +44,7 @@ void	LocationConfig::setRedirection( const std::string& redirection ) { _redirec
  * 
  * @param allowedMethod a string containign the allowed method (GET, POST or DELETE)
  */
-void	LocationConfig::addAllowedMethod( const std::string& allowedMethod )
+void	LocationConfig::_addAllowedMethod( const std::string& allowedMethod )
 {
 	_allowedMethods.push_back(allowedMethod);
 }
@@ -54,7 +54,7 @@ void	LocationConfig::addAllowedMethod( const std::string& allowedMethod )
  * 
  * @param cgiExtention a string containign the cgi extention (.php, .py, .sh etc...)
  */
-void	LocationConfig::addCgiExtention( const std::string& cgiExtention )
+void	LocationConfig::_addCgiExtention( const std::string& cgiExtention )
 {
 	_cgiExtentions.push_back(cgiExtention);
 }
@@ -62,7 +62,77 @@ void	LocationConfig::addCgiExtention( const std::string& cgiExtention )
 /**
  * @brief parser method to get all location-info from .conf file
  */
-void	LocationConfig::parseLocationBlock( const std::istream& file )
+void LocationConfig::parseLocationBlock( std::ifstream& file )
 {
+    std::string line;
 
+    while (std::getline(file, line))
+	{
+        line = trim(line, whiteSpaces);
+        if (line.empty() || line[0] == '#')
+			continue;
+
+        std::istringstream iss(line);
+        std::string key;
+        iss >> key;
+
+        if (key == "root")
+            setRoot(line);
+        else if (key == "allowed_methods")
+		{
+            std::vector<std::string> methods = split(line, SPACE);
+            setAllowedMethods(methods);
+        }
+		else if (key == "index")
+            setIndex(line);
+        else if (key == "autoindex")
+            setAutoIndex(line == "on");
+        else if (key == "cgi_extension")
+		{
+            std::vector<std::string> extensions = split(line, SPACE);
+            setCgiExtentions(extensions);
+        }
+		else if (key == "cgi_path")
+            setCgiPath(line);
+		else if (key == "upload_dir")
+            setUploadDir(line);
+        else if (key == "return")
+            setRedirection(line);
+        else if (key == "}")
+            return;
+        else
+            throw ConfigException("Unknown directive inside 'location': " + key);
+    }
+
+    throw ConfigException("Missing closing '}' for location block.");
+}
+
+/**
+ * @brief << operator overload
+ */
+std::ostream&	operator<<( std::ostream& os, const LocationConfig& location )
+{
+	os << "            LocationConfig {" << std::endl;
+	os << "                Path: " << location.getPath() << std::endl;
+	os << "                Root: " << location.getRoot() << std::endl;
+
+	os << "                Allowed Methods: ";
+	for (std::vector<std::string>::const_iterator it = location.getAllowedMethods().begin(); it != location.getAllowedMethods().end(); ++it)
+		os << *it << " ";
+	os << std::endl;
+
+	os << "                Index: " << location.getIndex() << std::endl;
+	os << "                AutoIndex: " << location.getAutoIndex() << std::endl;
+	os << "                CGI Path: " << location.getCgiPath() << std::endl;
+
+	os << "                CGI Extensions: ";
+	for (std::vector<std::string>::const_iterator it = location.getCgiExtentions().begin(); it != location.getCgiExtentions().end(); ++it)
+		os << *it << " ";
+	os << std::endl;
+
+	os << "                Upload Directory: " << location.getUploadDir() << std::endl;
+	os << "                Redirection: " << location.getRedirection() << std::endl;
+
+	os << "            }" << std::endl;
+	return os;
 }

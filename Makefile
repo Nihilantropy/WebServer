@@ -2,12 +2,12 @@
 NAME = webserv
 CXX = c++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++98
-SRC_DIR = ./
-INC_DIR = ./
+SRC_DIR = srcs
+INC_DIR = include
 OBJ_DIR = obj
 
-# Find all .cpp files in the srcs directory
-SRCS = $(wildcard $(SRC_DIR)/*.cpp)
+# Find all .cpp files in the srcs directory and subdirectories
+SRCS = $(wildcard $(SRC_DIR)/**/*.cpp)
 
 # Create a list of corresponding .o files in the obj directory
 OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
@@ -21,7 +21,7 @@ $(NAME): $(OBJS)
 
 # Rule to compile .cpp files into .o files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@mkdir -p $(OBJ_DIR)
+	@mkdir -p $(OBJ_DIR)/$(dir $*)
 	$(CXX) $(CXXFLAGS) -I$(INC_DIR) -c $< -o $@
 
 # Rule to clean up generated files

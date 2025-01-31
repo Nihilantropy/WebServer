@@ -1,7 +1,12 @@
 #pragma once
 
+#include <cstring>
 #include <string>
 #include <vector>
+#include <sstream>
+#include <fstream>
+#include "../utils/utils.hpp"
+#include "../exceptions/exceptions.hpp"
 
 /**
  * @brief class to store location-specific info
@@ -32,7 +37,7 @@ public:
 	void	setUploadDir( const std::string& uploadDir );
 	void	setRedirection( const std::string& redirection );
 
-	void	parseLocationBlock( const std::istream& file );
+	void	parseLocationBlock( std::ifstream& file );
 
 private:
 
@@ -46,9 +51,11 @@ private:
 	std::string					_uploadDir;
 	std::string					_redirection;
 
-	void	addAllowedMethod( const std::string& allowedMethod );
-	void	addCgiExtention( const std::string& cgiExtention );
+	void	_addAllowedMethod( const std::string& allowedMethod );
+	void	_addCgiExtention( const std::string& cgiExtention );
 
 	LocationConfig( const LocationConfig& other );
 	LocationConfig& operator=( const LocationConfig& other );
 };
+
+std::ostream&	operator<<(std::ostream& os, const LocationConfig& location);
