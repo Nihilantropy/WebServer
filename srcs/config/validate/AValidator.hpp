@@ -8,6 +8,6 @@
 class AValidator
 {
 public:
-	virtual ~AValidator() {}
+	virtual	~AValidator() {}
 	virtual void	_validate( void ) const = 0;
 };
