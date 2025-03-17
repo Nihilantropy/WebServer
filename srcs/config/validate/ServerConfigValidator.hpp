@@ -6,6 +6,10 @@
 #include <set>
 #include <string>
 
+#include "LocationConfigValidator.hpp"
+
+class LocationConfigValidator;
+
 /**
  * @brief class to validate Server configuration info
  * 

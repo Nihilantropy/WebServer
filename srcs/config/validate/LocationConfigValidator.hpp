@@ -3,6 +3,7 @@
 #include "AValidator.hpp"
 #include "../parser/LocationConfig.hpp"
 #include <iostream>
+#include <sstream>
 
 /**
  * @brief class to validate Location configuration info

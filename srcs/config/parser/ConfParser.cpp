@@ -1,4 +1,5 @@
 #include "ConfParser.hpp"
+#include <sstream>
 
 ConfParser::ConfParser(const std::string& filename) : _filename(filename), _configFile(), _servers()
 {
@@ -104,7 +105,9 @@ void	ConfParser::_validate(void)
 	std::map<std::string, std::vector<ServerConfig*> > hostPortMap;
 	
 	for (std::vector<ServerConfig*>::const_iterator it = _servers.begin(); it != _servers.end(); ++it) {
-		std::string hostPort = (*it)->getHost() + ":" + std::to_string((*it)->getPort());
+		std::stringstream ss;
+		ss << (*it)->getHost() << ":" << (*it)->getPort();
+		std::string hostPort = ss.str();
 		hostPortMap[hostPort].push_back(*it);
 	}
 
@@ -142,8 +145,8 @@ void	ConfParser::_setDefaults(void)
 		ServerConfigDefaults::setDefaults(**it);
 		
 		// Set default values for each location configuration
-		std::vector<LocationConfig*> locations = (*it)->getLocations();
-		for (std::vector<LocationConfig*>::iterator locIt = locations.begin(); locIt != locations.end(); ++locIt) {
+		const std::vector<LocationConfig*>& locations = (*it)->getLocations();
+		for (std::vector<LocationConfig*>::const_iterator locIt = locations.begin(); locIt != locations.end(); ++locIt) {
 			LocationConfigDefaults::setDefaults(**locIt);
 		}
 	}

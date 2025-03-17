@@ -1,4 +1,5 @@
 #include "ServerConfigValidator.hpp"
+#include <sstream>
 
 ServerConfigValidator::ServerConfigValidator(const ServerConfig& serverConfig) : _serverConfig(serverConfig)
 {
@@ -52,7 +53,9 @@ void ServerConfigValidator::_validateHostAndPort(void) const
     // Port validation
     int port = _serverConfig.getPort();
     if (port <= 0 || port > 65535) {
-        throw ValidationException("Invalid port number: " + std::to_string(port));
+        std::stringstream ss;
+        ss << "Invalid port number: " << port;
+        throw ValidationException(ss.str());
     }
 }
 
@@ -60,6 +63,7 @@ void ServerConfigValidator::_validateServerNames(void) const
 {
     // Server names are optional but should be valid if provided
     const std::vector<std::string>& serverNames = _serverConfig.getServerNames();
+    (void)serverNames; // To avoid unused variable warning
     
     // No specific validation needed for server names, they can be any string
     // But if we want to enforce some naming conventions, we could add checks here
@@ -77,7 +81,9 @@ void ServerConfigValidator::_validateClientMaxBodySize(void) const
     const size_t MAX_REASONABLE_SIZE = 1024 * 1024 * 1024;
     
     if (clientMaxBodySize > MAX_REASONABLE_SIZE) {
-        throw ValidationException("Client max body size too large: " + std::to_string(clientMaxBodySize) + " bytes");
+        std::stringstream ss;
+        ss << "Client max body size too large: " << clientMaxBodySize << " bytes";
+        throw ValidationException(ss.str());
     }
 }
 
@@ -88,12 +94,16 @@ void ServerConfigValidator::_validateErrorPages(void) const
     for (std::map<int, std::string>::const_iterator it = errorPages.begin(); it != errorPages.end(); ++it) {
         // Validate error code (should be between 300 and 599)
         if (it->first < 300 || it->first > 599) {
-            throw ValidationException("Invalid HTTP error code: " + std::to_string(it->first));
+            std::stringstream ss;
+            ss << "Invalid HTTP error code: " << it->first;
+            throw ValidationException(ss.str());
         }
         
         // Validate error page path (should not be empty)
         if (it->second.empty()) {
-            throw ValidationException("Error page path cannot be empty for error code: " + std::to_string(it->first));
+            std::stringstream ss;
+            ss << "Error page path cannot be empty for error code: " << it->first;
+            throw ValidationException(ss.str());
         }
         
         // Check if file exists - might not do this during validation

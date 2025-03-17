@@ -135,7 +135,9 @@ void LocationConfigValidator::_validateRedirection(void) const
         
         // Validate status code (should be 3xx)
         if (statusCode < 300 || statusCode > 399) {
-            throw ValidationException("Invalid redirect status code: " + std::to_string(statusCode) + " for location: " + _locationConfig.getPath());
+            std::stringstream ss;
+            ss << "Invalid redirect status code: " << statusCode << " for location: " << _locationConfig.getPath();
+            throw ValidationException(ss.str());
         }
         
         // Validate redirect URL

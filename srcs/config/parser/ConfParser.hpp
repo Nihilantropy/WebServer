@@ -8,8 +8,8 @@
 #include "../../utils/utils.hpp"
 #include "../../exceptions/exceptions.hpp"
 #include "../validate/ServerConfigValidator.hpp"
-#include "../validate/ServerConfigDefaults.hpp"
-#include "../validate/LocationConfigDefaults.hpp"
+#include "../defaults/ServerConfigDefaults.hpp"
+#include "../defaults/LocationConfigDefaults.hpp"
 
 #include "ServerConfig.hpp"
 

@@ -1,4 +1,5 @@
 #include "ServerConfigDefaults.hpp"
+#include <sstream>
 
 void ServerConfigDefaults::setDefaults(ServerConfig& config)
 {
@@ -53,7 +54,9 @@ void ServerConfigDefaults::_setDefaultServerName(ServerConfig& config)
     // If no server name is set, set a default based on host:port
     if (config.getServerNames().empty()) {
         std::vector<std::string> serverNames;
-        std::string defaultName = config.getHost() + ":" + std::to_string(config.getPort());
+        std::stringstream ss;
+        ss << config.getHost() << ":" << config.getPort();
+        std::string defaultName = ss.str();
         serverNames.push_back(defaultName);
         config.setServerNames(serverNames);
     }
