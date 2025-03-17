@@ -116,11 +116,6 @@ void ServerConfigValidator::_validateLocations(void) const
     for (std::vector<LocationConfig*>::const_iterator it = locations.begin(); it != locations.end(); ++it) {
         const std::string& path = (*it)->getPath();
         
-        // Check if path is empty
-        if (path.empty()) {
-            throw ValidationException("Location path cannot be empty");
-        }
-        
         // Check for duplicate paths
         if (paths.find(path) != paths.end()) {
             throw ValidationException("Duplicate location path: " + path);
@@ -128,55 +123,7 @@ void ServerConfigValidator::_validateLocations(void) const
         
         paths.insert(path);
         
-        // Validate location specific settings
-        _validateLocation(**it);
-    }
-}
-
-void ServerConfigValidator::_validateLocation(const LocationConfig& location) const
-{
-    // Validate root
-    const std::string& root = location.getRoot();
-    if (root.empty()) {
-        throw ValidationException("Location root cannot be empty for path: " + location.getPath());
-    }
-    
-    // Validate allowed methods
-    const std::vector<std::string>& methods = location.getAllowedMethods();
-    if (methods.empty()) {
-        throw ValidationException("No HTTP methods allowed for location: " + location.getPath());
-    }
-    
-    for (std::vector<std::string>::const_iterator it = methods.begin(); it != methods.end(); ++it) {
-        if (*it != "GET" && *it != "POST" && *it != "DELETE") {
-            throw ValidationException("Invalid HTTP method: " + *it + " for location: " + location.getPath());
-        }
-    }
-    
-    // Validate index file (if autoindex is off)
-    if (!location.getAutoIndex() && location.getIndex().empty()) {
-        throw ValidationException("Index directive required when autoindex is off for location: " + location.getPath());
-    }
-    
-    // Validate CGI configuration
-    if (!location.getCgiExtentions().empty()) {
-        if (location.getCgiPath().empty()) {
-            throw ValidationException("CGI path must be specified when CGI extensions are defined for location: " + location.getPath());
-        }
-    }
-    
-    // Validate upload directory (if allowed methods include POST)
-    bool hasPost = false;
-    for (std::vector<std::string>::const_iterator it = methods.begin(); it != methods.end(); ++it) {
-        if (*it == "POST") {
-            hasPost = true;
-            break;
-        }
-    }
-    
-    if (hasPost && location.getUploadDir().empty()) {
-        // This could be a warning rather than an error
-        // For now, we'll make it an error
-        throw ValidationException("Upload directory should be specified when POST method is allowed for location: " + location.getPath());
+        // Use the dedicated LocationConfigValidator
+        LocationConfigValidator validator(**it);
     }
 }

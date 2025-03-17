@@ -28,5 +28,4 @@ private:
 	void _validateClientMaxBodySize(void) const;
 	void _validateErrorPages(void) const;
 	void _validateLocations(void) const;
-	void _validateLocation(const LocationConfig& location) const;
 };
