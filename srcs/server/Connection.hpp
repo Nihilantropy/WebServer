@@ -6,6 +6,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "../config/parser/ServerConfig.hpp"
+#include "../http/Request.hpp"
+#include "../http/Response.hpp"
 
 /**
  * @brief Class to manage an individual client connection
@@ -40,6 +42,10 @@ private:
     
     time_t _lastActivity;           // Time of last activity (for timeout)
     ConnectionState _state;         // Current connection state
+    
+    // HTTP request and response objects
+    Request _request;
+    Response _response;
     
     // Connection timeout in seconds
     static const time_t CONNECTION_TIMEOUT = 60;
@@ -125,6 +131,20 @@ public:
      */
     bool shouldWrite() const;
     
+    /**
+     * @brief Get the HTTP request object
+     * 
+     * @return const Request& The HTTP request
+     */
+    const Request& getRequest() const;
+
+    /**
+     * @brief Get the HTTP response object
+     * 
+     * @return const Response& The HTTP response
+     */
+    const Response& getResponse() const;
+    
 private:
     // Prevent copying
     Connection(const Connection& other);
@@ -132,8 +152,9 @@ private:
     
     // Helper methods
     void _updateLastActivity();
-    bool _parseHttpHeaders();
-    bool _parseHttpBody();
     void _processRequest();
-    void _generateResponse();
+    void _handleStaticFile();
+    void _handleDefault();
+    void _handleError(int statusCode);
+    std::string _getErrorPage(int statusCode);
 };

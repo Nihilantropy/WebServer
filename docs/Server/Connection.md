@@ -1,4 +1,4 @@
-# Detailed Explanation of the Connection Class
+# Detailed Explanation of the Connection Class (Updated)
 
 ## 1. Connection Class Purpose and Overview
 
@@ -28,6 +28,10 @@ private:
     time_t _lastActivity;           // Time of last activity (for timeout)
     ConnectionState _state;         // Current connection state
     
+    // HTTP request and response objects
+    Request _request;
+    Response _response;
+    
     // Connection timeout in seconds
     static const time_t CONNECTION_TIMEOUT = 60;
 ```
@@ -40,6 +44,8 @@ private:
 - **_outputBuffer**: String buffer that holds data to be written to the client
 - **_lastActivity**: Timestamp of the most recent activity on this connection (used for timeout detection)
 - **_state**: Current state in the connection's lifecycle state machine
+- **_request**: HTTP Request object that parses and stores the request information
+- **_response**: HTTP Response object for generating the response
 - **CONNECTION_TIMEOUT**: Constant defining how long a connection can be idle before being closed (60 seconds)
 
 ## 3. Connection State Machine
@@ -76,7 +82,8 @@ The state transitions happen based on events like:
 ```cpp
 Connection::Connection(int clientFd, struct sockaddr_in clientAddr, ServerConfig* config)
     : _clientFd(clientFd), _clientAddr(clientAddr), _serverConfig(config),
-      _inputBuffer(), _outputBuffer(), _state(READING_HEADERS)
+      _inputBuffer(), _outputBuffer(), _state(READING_HEADERS),
+      _request(), _response()
 {
     // Convert binary address to string for logging
     char ipBuffer[INET_ADDRSTRLEN];
@@ -98,6 +105,7 @@ Connection::~Connection()
   - Initializes the connection with the client socket and server configuration
   - Converts the binary IP address to a string for logging
   - Sets the initial state to READING_HEADERS
+  - Initializes the Request and Response objects
   - Updates the last activity timestamp
   - Logs information about the new connection
   
@@ -136,19 +144,20 @@ bool Connection::readData()
         
         // Process data based on current state
         if (_state == READING_HEADERS) {
-            if (_parseHttpHeaders()) {
-                if (_state == READING_BODY) {
-                    // Continue reading body if needed
-                    return true;
-                } else {
-                    // Headers complete, no body expected
+            if (_request.parseHeaders(_inputBuffer)) {
+                // Headers complete, check if we need to read the body
+                if (_request.isComplete()) {
+                    // No body expected, move to processing
                     _state = PROCESSING;
                     process();
+                } else {
+                    // Body expected, move to reading body
+                    _state = READING_BODY;
                 }
             }
         } else if (_state == READING_BODY) {
-            if (_parseHttpBody()) {
-                // Body complete
+            if (_request.parseBody(_inputBuffer)) {
+                // Body complete, move to processing
                 _state = PROCESSING;
                 process();
             }
@@ -182,7 +191,7 @@ bool Connection::readData()
   - Uses non-blocking I/O with proper handling of EAGAIN/EWOULDBLOCK
   - Accumulates read data in the input buffer
   - Updates last activity timestamp
-  - Processes headers and body as they become complete
+  - Delegates HTTP parsing to the Request object
   - Transitions to the next state when appropriate
   - Handles connection closure and errors
 
@@ -212,13 +221,21 @@ bool Connection::writeData()
         
         // If all data sent, move to next state
         if (_outputBuffer.empty()) {
-            // For HTTP/1.0 or "Connection: close", close after response
-            // For HTTP/1.1 with "Connection: keep-alive", go back to reading headers
+            // Mark the response as sent
+            _response.markAsSent();
             
-            // TODO: Implement proper HTTP connection handling based on headers
-            // For now, we'll keep the connection open and go back to reading headers
-            _state = READING_HEADERS;
-            _inputBuffer.clear();
+            // Check connection header
+            bool keepAlive = _request.getHeaders().keepAlive(true);
+            
+            if (keepAlive) {
+                // Reset for the next request
+                _request.reset();
+                _state = READING_HEADERS;
+                _inputBuffer.clear();
+            } else {
+                // Close connection after response
+                _state = CLOSED;
+            }
         }
         
         return true;
@@ -249,7 +266,8 @@ bool Connection::writeData()
   - Uses non-blocking I/O with proper handling of EAGAIN/EWOULDBLOCK
   - Removes sent data from the output buffer
   - Updates last activity timestamp
-  - Transitions back to READING_HEADERS when response is fully sent (for keep-alive connections)
+  - Handles keep-alive connection management based on HTTP headers
+  - Resets for the next request if keep-alive is enabled
   - Handles connection closure and errors
 
 ## 6. HTTP Processing Methods
@@ -263,251 +281,216 @@ void Connection::process()
         return;
     }
     
-    std::cout << "Processing request from " << _clientIp << std::endl;
+    std::cout << "Processing " << _request.getMethodStr() << " request for " 
+              << _request.getPath() << " from " << _clientIp << std::endl;
     
-    _processRequest();
-    _generateResponse();
+    // Create a new response for this request
+    _response = Response();
     
+    try {
+        // Process the request and generate a response
+        _processRequest();
+    } catch (const std::exception& e) {
+        // Handle any exceptions during processing
+        std::cerr << "Error processing request: " << e.what() << std::endl;
+        _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+    }
+    
+    // Build the response and store in output buffer
+    _outputBuffer = _response.build();
+    
+    // Move to sending response state
     _state = SENDING_RESPONSE;
 }
 ```
 
 - **Purpose**: Main entry point for processing a complete HTTP request
 - **Behavior**:
-  - Calls _processRequest() to interpret the HTTP request
-  - Calls _generateResponse() to create an appropriate HTTP response
+  - Creates a new Response object for this request
+  - Calls _processRequest() to process the request
+  - Catches any exceptions and generates an error response if needed
+  - Builds the response and stores it in the output buffer
   - Transitions to SENDING_RESPONSE state
 
-### _parseHttpHeaders()
-
-```cpp
-bool Connection::_parseHttpHeaders()
-{
-    // Look for end of headers (double CRLF)
-    size_t headerEnd = _inputBuffer.find("\r\n\r\n");
-    if (headerEnd == std::string::npos) {
-        // Not enough data yet
-        return false;
-    }
-    
-    // We have complete headers
-    std::string headers = _inputBuffer.substr(0, headerEnd + 4);
-    _inputBuffer.erase(0, headerEnd + 4);
-    
-    std::cout << "Received complete HTTP headers from " << _clientIp << std::endl;
-    
-    // TODO: Actually parse the headers to extract method, URI, version, etc.
-    // This will be implemented in Phase 3 (HTTP Protocol Implementation)
-    
-    // For now, check if we expect a body (based on presence of Content-Length or Transfer-Encoding)
-    // This is a simplified check - HTTP parsing will be more complex in the real implementation
-    if (headers.find("Content-Length:") != std::string::npos || 
-        headers.find("Transfer-Encoding: chunked") != std::string::npos) {
-        _state = READING_BODY;
-        return true;
-    }
-    
-    // No body expected
-    return true;
-}
-```
-
-- **Purpose**: Parses HTTP headers from the input buffer
-- **Return value**: Boolean indicating if headers are complete
-- **Key aspects**:
-  - Identifies header boundary using double CRLF
-  - Extracts and removes headers from the input buffer
-  - Determines if a request body is expected
-  - Sets state to READING_BODY if a body is expected
-  - Contains placeholders for full HTTP header parsing (to be implemented)
-
-### _parseHttpBody()
-
-```cpp
-bool Connection::_parseHttpBody()
-{
-    // TODO: Implement body parsing based on Content-Length or chunked encoding
-    // This will be implemented in Phase 3 (HTTP Protocol Implementation)
-    
-    // For now, assume we have the full body
-    std::cout << "Received HTTP body from " << _clientIp << std::endl;
-    return true;
-}
-```
-
-- **Purpose**: Parses HTTP request body from the input buffer
-- **Return value**: Boolean indicating if body parsing is complete
-- **Behavior**:
-  - Currently a placeholder for future implementation
-  - Will handle both Content-Length and chunked transfer encoding
-  - Currently assumes body is complete for prototype purposes
-
-### _processRequest() and _generateResponse()
+### _processRequest()
 
 ```cpp
 void Connection::_processRequest()
 {
-    // TODO: Implement actual request processing based on the HTTP method, URI, etc.
-    // This will be implemented in Phase 4 (Request Handlers)
+    // Check if method is supported
+    Request::Method method = _request.getMethod();
+    if (method == Request::UNKNOWN) {
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+        return;
+    }
     
-    // For now, we'll just prepare a simple response
-    _generateResponse();
-}
-
-void Connection::_generateResponse()
-{
-    // TODO: Generate proper HTTP response based on request
-    // This will be implemented in Phase 3 (HTTP Protocol Implementation)
+    // Check if the requested method is allowed for this location
+    std::string methodStr = _request.getMethodStr();
+    bool methodAllowed = false;
     
-    // For now, just generate a simple "Hello World" response
-    std::string responseBody = "<h1>Hello from WebServer!</h1>\n"
-                              "<p>Your IP address is: " + _clientIp + "</p>\n";
+    // TODO: Implement proper route matching based on _serverConfig->getLocations()
+    // For now, just check if the method is allowed in the first location
+    if (!_serverConfig->getLocations().empty()) {
+        const std::vector<std::string>& allowedMethods = _serverConfig->getLocations().front()->getAllowedMethods();
+        for (std::vector<std::string>::const_iterator it = allowedMethods.begin(); it != allowedMethods.end(); ++it) {
+            if (*it == methodStr) {
+                methodAllowed = true;
+                break;
+            }
+        }
+    }
     
-    std::stringstream lengthStr;
-    lengthStr << responseBody.size();
+    if (!methodAllowed) {
+        _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
+        return;
+    }
     
-    _outputBuffer = "HTTP/1.1 200 OK\r\n"
-                    "Content-Type: text/html\r\n"
-                    "Content-Length: " + lengthStr.str() + "\r\n"
-                    "Connection: keep-alive\r\n"
-                    "\r\n" + 
-                    responseBody;
+    // Handle the request based on method
+    if (method == Request::GET) {
+        _handleStaticFile();
+    } else if (method == Request::POST) {
+        // TODO: Implement POST handling
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+    } else if (method == Request::DELETE) {
+        // TODO: Implement DELETE handling
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+    } else {
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+    }
 }
 ```
 
-- **_processRequest()**:
-  - Placeholder for future implementation of HTTP request processing
-  - Will handle different HTTP methods (GET, POST, DELETE)
-  - Will route requests to appropriate handlers
+- **Purpose**: Processes the HTTP request and generates an appropriate response
+- **Key aspects**:
+  - Validates the HTTP method
+  - Checks if the method is allowed for the requested location
+  - Routes the request to the appropriate handler based on the method
+  - Generates error responses for unsupported or disallowed methods
+
+### Error Handling Methods
+
+```cpp
+void Connection::_handleError(int statusCode)
+{
+    // Get error page content
+    std::string errorContent = _getErrorPage(statusCode);
+    
+    // Set response with error status and content
+    _response.setStatusCode(statusCode);
+    _response.setBody(errorContent, "text/html");
+}
+
+std::string Connection::_getErrorPage(int statusCode)
+{
+    // Check if there is a custom error page configured
+    std::map<int, std::string> errorPages = _serverConfig->getErrorPages();
+    std::map<int, std::string>::const_iterator it = errorPages.find(statusCode);
+    
+    if (it != errorPages.end()) {
+        // Custom error page configured, try to read it
+        std::string path = it->second;
+        
+        // TODO: Implement proper file reading based on server root
+        // For now, just try to read directly
+        std::ifstream file(path.c_str());
+        if (file.is_open()) {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            return buffer.str();
+        }
+    }
+    
+    // Default error page
+    std::stringstream errorContent;
+    errorContent << "<html>\r\n"
+                 << "<head><title>Error " << statusCode << "</title></head>\r\n"
+                 << "<body>\r\n"
+                 << "  <h1>Error " << statusCode << "</h1>\r\n"
+                 << "  <p>" << getReasonPhrase(statusCode) << "</p>\r\n"
+                 << "  <hr>\r\n"
+                 << "  <p>WebServer</p>\r\n"
+                 << "</body>\r\n"
+                 << "</html>\r\n";
+    
+    return errorContent.str();
+}
+```
+
+- **_handleError**:
+  - Sets the response status code and body for an error condition
+  - Calls _getErrorPage to get the error page content
   
-- **_generateResponse()**:
-  - Generates an HTTP response and stores it in the output buffer
-  - Currently creates a simple "Hello World" response
-  - Will be expanded to generate proper responses based on request
+- **_getErrorPage**:
+  - Tries to load a custom error page from the server configuration
+  - Falls back to a default error page if no custom page is available
+  - Returns HTML content for the error page
 
 ## 7. Connection Management Methods
 
-### _updateLastActivity()
+These methods remain largely the same as in the original implementation:
+
+- **_updateLastActivity()**: Updates the timestamp of the last activity
+- **isTimeout()**: Checks if the connection has been idle for too long
+- **close()**: Closes the client socket and marks the connection as closed
+- **shouldRead() / shouldWrite()**: Determine if the connection should be monitored for read/write events
+
+## 8. New Methods for HTTP Access
 
 ```cpp
-void Connection::_updateLastActivity()
+const Request& Connection::getRequest() const
 {
-    _lastActivity = time(NULL);
+    return _request;
+}
+
+const Response& Connection::getResponse() const
+{
+    return _response;
 }
 ```
 
-- **Purpose**: Updates the timestamp of the last activity on this connection
-- **Usage**: Called whenever reading or writing occurs
-- **Importance**: Used to detect idle connections for timeout management
+- **Purpose**: Provide access to the HTTP request and response objects
+- **Usage**: Allow external components to inspect the HTTP state
 
-### isTimeout()
+## 9. Key Design Changes from Previous Version
 
-```cpp
-bool Connection::isTimeout() const
-{
-    // Check if the connection has been idle for too long
-    time_t now = time(NULL);
-    return (now - _lastActivity) > CONNECTION_TIMEOUT;
-}
-```
+### 1. Integration with HTTP Classes
 
-- **Purpose**: Checks if the connection has been idle for too long
-- **Return value**: Boolean indicating if the connection has timed out
-- **Behavior**: Compares current time with last activity time against timeout threshold
-- **Usage**: Called periodically by the server to close idle connections
+The main change is the integration with dedicated HTTP classes:
 
-### close()
+- **Request Class**: Now handles all HTTP request parsing
+- **Response Class**: Manages HTTP response generation
+- **Headers Class**: Provides HTTP header management
 
-```cpp
-void Connection::close()
-{
-    if (_clientFd >= 0) {
-        ::close(_clientFd);
-        _clientFd = -1;
-    }
-    _state = CLOSED;
-}
-```
+This improves separation of concerns:
+- Connection: Handles socket I/O and connection lifecycle
+- Request/Response: Handle HTTP protocol semantics
+- Server: Manages all connections and routing
 
-- **Purpose**: Closes the client socket and marks the connection as closed
-- **Behavior**:
-  - Checks if socket is valid before closing
-  - Closes the socket using the system close() function
-  - Sets file descriptor to -1 to prevent double-closing
-  - Sets state to CLOSED
-- **Usage**: Called when connection is finished, encounters an error, or times out
+### 2. Improved HTTP Protocol Support
 
-## 8. Helper Methods for Event Management
+The updated implementation provides much better HTTP protocol support:
 
-### shouldRead() and shouldWrite()
+- **Method Validation**: Proper validation of HTTP methods
+- **Header Handling**: Full HTTP header support through Headers class
+- **Keep-Alive**: Proper handling of persistent connections
+- **Error Pages**: Custom error pages based on server configuration
+- **Status Codes**: Comprehensive HTTP status code support
 
-```cpp
-bool Connection::shouldRead() const
-{
-    // We should monitor for read events when:
-    // - Reading headers
-    // - Reading body
-    return (_state == READING_HEADERS || _state == READING_BODY) && _state != CLOSED;
-}
+### 3. Enhanced Error Handling
 
-bool Connection::shouldWrite() const
-{
-    // We should monitor for write events when:
-    // - In SENDING_RESPONSE state
-    // - Have data in the output buffer
-    return _state == SENDING_RESPONSE && !_outputBuffer.empty() && _state != CLOSED;
-}
-```
+Error handling is more robust:
 
-- **Purpose**: Determine if the connection should be monitored for read/write events
-- **Return value**: Boolean indicating if monitoring is needed
-- **Behavior**:
-  - shouldRead() returns true in states where we need to read from the client
-  - shouldWrite() returns true when we have data to send and are in the right state
-  - Both return false if the connection is closed
-- **Usage**: Called by the Server class to decide which events to monitor with poll()
+- **Exception Catching**: Process method catches exceptions from request handlers
+- **Error Response Generation**: Proper error responses with custom error pages
+- **Method Validation**: Validates allowed methods for requested paths
+- **Protocol Compliance**: Better adherence to HTTP protocol standards
 
-## 9. Key Design Decisions
+## 10. Why These Changes Matter for Our Web Server
 
-### 1. State Machine Architecture
+- **Modularity**: Cleaner separation of concerns between network, HTTP, and application logic
+- **Protocol Compliance**: Better adherence to HTTP standards
+- **Maintainability**: More organized code with dedicated classes for each responsibility
+- **Extensibility**: Easier to add new HTTP features or methods
+- **Resource Management**: Better handling of keep-alive connections and timeouts
 
-The Connection class uses a state machine to track progress through the HTTP request/response cycle. This approach:
-- Keeps track of where we are in the HTTP transaction
-- Ensures we only perform appropriate operations in each state
-- Allows for clean transitions between different phases
-- Makes it easy to expand with more states if needed
-
-### 2. Non-blocking I/O
-
-All I/O operations are designed to be non-blocking:
-- Never blocks waiting for data to be available
-- Handles EAGAIN/EWOULDBLOCK appropriately
-- Returns control to the main event loop when operations would block
-- Updates the IOMultiplexer with current read/write needs
-
-### 3. Buffer Management
-
-The class uses string buffers for incoming and outgoing data:
-- Accumulates partial reads until complete headers/body are available
-- Tracks how much of the output buffer has been sent
-- Properly handles partial writes when socket buffers are full
-- Clears buffers when appropriate for connection reuse
-
-### 4. Connection Reuse
-
-The implementation supports HTTP keep-alive:
-- Transitions back to READING_HEADERS after sending a response
-- Clears input buffer for the next request
-- Maintains the same socket for multiple HTTP transactions
-- Updates activity timestamp to prevent premature timeouts
-
-## 10. Why This Design Matters for Our Web Server
-
-- **Non-blocking I/O**: Satisfies the project requirement that the server never blocks
-- **State Machine**: Enables clear, maintainable code for HTTP transaction processing
-- **Buffer Management**: Handles partial reads/writes properly in a non-blocking environment
-- **Connection Reuse**: Improves performance by avoiding repeated connection setup
-- **Timeout Handling**: Prevents resource exhaustion from idle connections
-- **Clean Separation**: Isolates HTTP protocol handling from server management
-
-This design ensures our web server can efficiently handle many concurrent connections while maintaining clean, maintainable code. The Connection class forms the core of our HTTP processing pipeline, with clear hooks for future implementation of HTTP parsing and request handling.
+These changes transform our networking server into a proper HTTP web server that can handle requests according to the HTTP protocol standards. The implementation now provides a solid foundation for adding the request handlers needed in Phase 4 of the project.

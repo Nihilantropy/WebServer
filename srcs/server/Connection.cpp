@@ -3,11 +3,15 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <string.h>
+#include "../http/StatusCodes.hpp"
 
 Connection::Connection(int clientFd, struct sockaddr_in clientAddr, ServerConfig* config)
     : _clientFd(clientFd), _clientAddr(clientAddr), _serverConfig(config),
-      _inputBuffer(), _outputBuffer(), _state(READING_HEADERS)
+      _inputBuffer(), _outputBuffer(), _state(READING_HEADERS),
+      _request(), _response()
 {
     // Convert binary address to string for logging
     char ipBuffer[INET_ADDRSTRLEN];
@@ -55,19 +59,20 @@ bool Connection::readData()
         
         // Process data based on current state
         if (_state == READING_HEADERS) {
-            if (_parseHttpHeaders()) {
-                if (_state == READING_BODY) {
-                    // Continue reading body if needed
-                    return true;
-                } else {
-                    // Headers complete, no body expected
+            if (_request.parseHeaders(_inputBuffer)) {
+                // Headers complete, check if we need to read the body
+                if (_request.isComplete()) {
+                    // No body expected, move to processing
                     _state = PROCESSING;
                     process();
+                } else {
+                    // Body expected, move to reading body
+                    _state = READING_BODY;
                 }
             }
         } else if (_state == READING_BODY) {
-            if (_parseHttpBody()) {
-                // Body complete
+            if (_request.parseBody(_inputBuffer)) {
+                // Body complete, move to processing
                 _state = PROCESSING;
                 process();
             }
@@ -116,13 +121,21 @@ bool Connection::writeData()
         
         // If all data sent, move to next state
         if (_outputBuffer.empty()) {
-            // For HTTP/1.0 or "Connection: close", close after response
-            // For HTTP/1.1 with "Connection: keep-alive", go back to reading headers
+            // Mark the response as sent
+            _response.markAsSent();
             
-            // TODO: Implement proper HTTP connection handling based on headers
-            // For now, we'll keep the connection open and go back to reading headers
-            _state = READING_HEADERS;
-            _inputBuffer.clear();
+            // Check connection header
+            bool keepAlive = _request.getHeaders().keepAlive(true);
+            
+            if (keepAlive) {
+                // Reset for the next request
+                _request.reset();
+                _state = READING_HEADERS;
+                _inputBuffer.clear();
+            } else {
+                // Close connection after response
+                _state = CLOSED;
+            }
         }
         
         return true;
@@ -151,81 +164,144 @@ void Connection::process()
         return;
     }
     
-    std::cout << "Processing request from " << _clientIp << std::endl;
+    std::cout << "Processing " << _request.getMethodStr() << " request for " 
+              << _request.getPath() << " from " << _clientIp << std::endl;
     
-    _processRequest();
-    _generateResponse();
+    // Create a new response for this request
+    _response = Response();
     
+    try {
+        // Process the request and generate a response
+        _processRequest();
+    } catch (const std::exception& e) {
+        // Handle any exceptions during processing
+        std::cerr << "Error processing request: " << e.what() << std::endl;
+        _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+    }
+    
+    // Build the response and store in output buffer
+    _outputBuffer = _response.build();
+    
+    // Move to sending response state
     _state = SENDING_RESPONSE;
-}
-
-bool Connection::_parseHttpHeaders()
-{
-    // Look for end of headers (double CRLF)
-    size_t headerEnd = _inputBuffer.find("\r\n\r\n");
-    if (headerEnd == std::string::npos) {
-        // Not enough data yet
-        return false;
-    }
-    
-    // We have complete headers
-    std::string headers = _inputBuffer.substr(0, headerEnd + 4);
-    _inputBuffer.erase(0, headerEnd + 4);
-    
-    std::cout << "Received complete HTTP headers from " << _clientIp << std::endl;
-    
-    // TODO: Actually parse the headers to extract method, URI, version, etc.
-    // This will be implemented in Phase 3 (HTTP Protocol Implementation)
-    
-    // For now, check if we expect a body (based on presence of Content-Length or Transfer-Encoding)
-    // This is a simplified check - HTTP parsing will be more complex in the real implementation
-    if (headers.find("Content-Length:") != std::string::npos || 
-        headers.find("Transfer-Encoding: chunked") != std::string::npos) {
-        _state = READING_BODY;
-        return true;
-    }
-    
-    // No body expected
-    return true;
-}
-
-bool Connection::_parseHttpBody()
-{
-    // TODO: Implement body parsing based on Content-Length or chunked encoding
-    // This will be implemented in Phase 3 (HTTP Protocol Implementation)
-    
-    // For now, assume we have the full body
-    std::cout << "Received HTTP body from " << _clientIp << std::endl;
-    return true;
 }
 
 void Connection::_processRequest()
 {
-    // TODO: Implement actual request processing based on the HTTP method, URI, etc.
-    // This will be implemented in Phase 4 (Request Handlers)
+    // Check if method is supported
+    Request::Method method = _request.getMethod();
+    if (method == Request::UNKNOWN) {
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+        return;
+    }
     
-    // For now, we'll just prepare a simple response
-    _generateResponse();
+    // Check if the requested method is allowed for this location
+    std::string methodStr = _request.getMethodStr();
+    bool methodAllowed = false;
+    
+    // TODO: Implement proper route matching based on _serverConfig->getLocations()
+    // For now, just check if the method is allowed in the first location
+    if (!_serverConfig->getLocations().empty()) {
+        const std::vector<std::string>& allowedMethods = _serverConfig->getLocations().front()->getAllowedMethods();
+        for (std::vector<std::string>::const_iterator it = allowedMethods.begin(); it != allowedMethods.end(); ++it) {
+            if (*it == methodStr) {
+                methodAllowed = true;
+                break;
+            }
+        }
+    }
+    
+    if (!methodAllowed) {
+        _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
+        return;
+    }
+    
+    // Handle the request based on method
+    if (method == Request::GET) {
+        _handleStaticFile();
+    } else if (method == Request::POST) {
+        // TODO: Implement POST handling
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+    } else if (method == Request::DELETE) {
+        // TODO: Implement DELETE handling
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+    } else {
+        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+    }
 }
 
-void Connection::_generateResponse()
+void Connection::_handleStaticFile()
 {
-    // TODO: Generate proper HTTP response based on request
-    // This will be implemented in Phase 3 (HTTP Protocol Implementation)
+    // TODO: Implement proper file serving based on location configuration
+    // For now, just return a simple response
+    _handleDefault();
+}
+
+void Connection::_handleDefault()
+{
+    // Simple default response for initial implementation
+    std::string responseBody = "<html>\r\n"
+                               "<head><title>WebServer</title></head>\r\n"
+                               "<body>\r\n"
+                               "  <h1>Welcome to WebServer!</h1>\r\n"
+                               "  <p>Your request has been processed successfully.</p>\r\n"
+                               "  <hr>\r\n"
+                               "  <p>Request details:</p>\r\n"
+                               "  <ul>\r\n"
+                               "    <li>Method: " + _request.getMethodStr() + "</li>\r\n"
+                               "    <li>Path: " + _request.getPath() + "</li>\r\n"
+                               "    <li>Client IP: " + _clientIp + "</li>\r\n"
+                               "  </ul>\r\n"
+                               "</body>\r\n"
+                               "</html>\r\n";
     
-    // For now, just generate a simple "Hello World" response
-    std::string responseBody = "<h1>Hello from WebServer!</h1>\n"
-                              "<p>Your IP address is: " + _clientIp + "</p>\n";
+    _response.setStatusCode(HTTP_STATUS_OK);
+    _response.setBody(responseBody, "text/html");
+}
+
+void Connection::_handleError(int statusCode)
+{
+    // Get error page content
+    std::string errorContent = _getErrorPage(statusCode);
     
-    std::stringstream lengthStr;
-    lengthStr << responseBody.size();
+    // Set response with error status and content
+    _response.setStatusCode(statusCode);
+    _response.setBody(errorContent, "text/html");
+}
+
+std::string Connection::_getErrorPage(int statusCode)
+{
+    // Check if there is a custom error page configured
+    std::map<int, std::string> errorPages = _serverConfig->getErrorPages();
+    std::map<int, std::string>::const_iterator it = errorPages.find(statusCode);
     
-    _outputBuffer = "HTTP/1.1 200 OK\r\n"
-                    "Content-Type: text/html\r\n"
-                    "Content-Length: " + lengthStr.str() + "\r\n"
-                    "Connection: keep-alive\r\n"
-                    "\r\n" + 
-                    responseBody;
+    if (it != errorPages.end()) {
+        // Custom error page configured, try to read it
+        std::string path = it->second;
+        
+        // TODO: Implement proper file reading based on server root
+        // For now, just try to read directly
+        std::ifstream file(path.c_str());
+        if (file.is_open()) {
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            return buffer.str();
+        }
+    }
+    
+    // Default error page
+    std::stringstream errorContent;
+    errorContent << "<html>\r\n"
+                 << "<head><title>Error " << statusCode << "</title></head>\r\n"
+                 << "<body>\r\n"
+                 << "  <h1>Error " << statusCode << "</h1>\r\n"
+                 << "  <p>" << getReasonPhrase(statusCode) << "</p>\r\n"
+                 << "  <hr>\r\n"
+                 << "  <p>WebServer</p>\r\n"
+                 << "</body>\r\n"
+                 << "</html>\r\n";
+    
+    return errorContent.str();
 }
 
 bool Connection::isTimeout() const
@@ -273,4 +349,14 @@ bool Connection::shouldWrite() const
     // - In SENDING_RESPONSE state
     // - Have data in the output buffer
     return _state == SENDING_RESPONSE && !_outputBuffer.empty() && _state != CLOSED;
+}
+
+const Request& Connection::getRequest() const
+{
+    return _request;
+}
+
+const Response& Connection::getResponse() const
+{
+    return _response;
 }
