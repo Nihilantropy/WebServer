@@ -130,11 +130,19 @@ void ServerConfig::parseServerBlock( std::ifstream& file )
 
 		if (key == "listen")
 		{
-			size_t colon = line.find(':');
+			std::string listenValue;
+			iss >> listenValue;  // Get the value after the "listen" keyword
+			
+			// Remove trailing semicolon if present
+			size_t semiPos = listenValue.find(';');
+			if (semiPos != std::string::npos)
+				listenValue = listenValue.substr(0, semiPos);
+			
+			size_t colon = listenValue.find(':');
 			if (colon != std::string::npos)
 			{
-				setHost(line.substr(0, colon));
-				setPort(atoi(line.substr(colon + 1).c_str()));
+				setHost(listenValue.substr(0, colon));
+				setPort(atoi(listenValue.substr(colon + 1).c_str()));
 			}
 			else
 				throw ConfigException("Invalid 'listen' format, expected 'IP:PORT'.");
