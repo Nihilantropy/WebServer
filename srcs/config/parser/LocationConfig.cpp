@@ -62,49 +62,68 @@ void	LocationConfig::_addCgiExtention( const std::string& cgiExtention )
 /**
  * @brief parser method to get all location-info from .conf file
  */
-void LocationConfig::parseLocationBlock( std::ifstream& file )
+void LocationConfig::parseLocationBlock(std::ifstream& file)
 {
-    std::string line;
+	std::string line;
 
-    while (std::getline(file, line))
+	while (std::getline(file, line))
 	{
-        line = trim(line, whiteSpaces);
-        if (line.empty() || line[0] == '#')
+		line = trim(line, whiteSpaces);
+		if (line.empty() || line[0] == '#')
 			continue;
 
-        std::istringstream iss(line);
-        std::string key;
-        iss >> key;
+		std::istringstream iss(line);
+		std::string key;
+		iss >> key;
 
-        if (key == "root")
-            setRoot(line);
-        else if (key == "allowed_methods")
+		if (key == "root")
 		{
-            std::vector<std::string> methods = split(line, SPACE);
-            setAllowedMethods(methods);
-        }
+			setRoot(extractDirectiveValue(line, key));
+		}
+		else if (key == "allowed_methods")
+		{
+			std::string value = extractDirectiveValue(line, key);
+			std::vector<std::string> methods = split(value, SPACE);
+			setAllowedMethods(methods);
+		}
 		else if (key == "index")
-            setIndex(line);
-        else if (key == "autoindex")
-            setAutoIndex(line == "on");
-        else if (key == "cgi_extension")
 		{
-            std::vector<std::string> extensions = split(line, SPACE);
-            setCgiExtentions(extensions);
-        }
+			setIndex(extractDirectiveValue(line, key));
+		}
+		else if (key == "autoindex")
+		{
+			std::string value = extractDirectiveValue(line, key);
+			setAutoIndex(value == "on");
+		}
+		else if (key == "cgi_extension")
+		{
+			std::string value = extractDirectiveValue(line, key);
+			std::vector<std::string> extensions = split(value, SPACE);
+			setCgiExtentions(extensions);
+		}
 		else if (key == "cgi_path")
-            setCgiPath(line);
+		{
+			setCgiPath(extractDirectiveValue(line, key));
+		}
 		else if (key == "upload_dir")
-            setUploadDir(line);
-        else if (key == "return")
-            setRedirection(line);
-        else if (key == "}")
-            return;
-        else
-            throw ConfigException("Unknown directive inside 'location': " + key);
-    }
+		{
+			setUploadDir(extractDirectiveValue(line, key));
+		}
+		else if (key == "return")
+		{
+			setRedirection(extractDirectiveValue(line, key));
+		}
+		else if (key == "}")
+		{
+			return;
+		}
+		else
+		{
+			throw ConfigException("Unknown directive inside 'location': " + key);
+		}
+	}
 
-    throw ConfigException("Missing closing '}' for location block.");
+	throw ConfigException("Missing closing '}' for location block.");
 }
 
 /**

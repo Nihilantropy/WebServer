@@ -32,7 +32,9 @@ clean:
 fclean: clean
 	rm -f $(NAME)
 
+fc: fclean
+
 # Rule to recompile everything
 re: fclean all
 
-.PHONY: all clean fclean re
+.PHONY: all clean fclean re fc

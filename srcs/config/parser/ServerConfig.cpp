@@ -114,7 +114,7 @@ size_t	ServerConfig::_parseSize( const std::string& sizeStr )
 /**
  * @brief Parses a `server` block from the configuration file.
  */
-void ServerConfig::parseServerBlock( std::ifstream& file )
+void ServerConfig::parseServerBlock(std::ifstream& file)
 {
 	std::string line;
 
@@ -130,13 +130,7 @@ void ServerConfig::parseServerBlock( std::ifstream& file )
 
 		if (key == "listen")
 		{
-			std::string listenValue;
-			iss >> listenValue;  // Get the value after the "listen" keyword
-			
-			// Remove trailing semicolon if present
-			size_t semiPos = listenValue.find(';');
-			if (semiPos != std::string::npos)
-				listenValue = listenValue.substr(0, semiPos);
+			std::string listenValue = extractDirectiveValue(line, key);
 			
 			size_t colon = listenValue.find(':');
 			if (colon != std::string::npos)
@@ -149,28 +143,28 @@ void ServerConfig::parseServerBlock( std::ifstream& file )
 		}
 		else if (key == "server_name")
 		{
-			std::vector<std::string> names = split(line, ' ');
-			names.erase(names.begin());
+			std::string value = extractDirectiveValue(line, key);
+			std::vector<std::string> names = split(value, SPACE);
 			setServerNames(names);
 		}
 		else if (key == "client_max_body_size")
 		{
-			std::string	value;
-			iss >> value;
+			std::string value = extractDirectiveValue(line, key);
 			setClientMaxBodySize(_parseSize(value));
 		}
 		else if (key == "error_page")
 		{
-			std::istringstream	iss(line);
-			std::string			keyWord;
-			int					errorCode;
-			std::string			errorPage;
-
-			iss >> keyWord >> errorCode >> errorPage;
-
-			if (iss.fail())
+			std::string value = extractDirectiveValue(line, key);
+			std::istringstream valueIss(value);
+			
+			int errorCode;
+			std::string errorPage;
+			
+			valueIss >> errorCode >> errorPage;
+			
+			if (valueIss.fail())
 				throw ConfigException("Failed to parse error_page directive");
-
+			
 			_addErrorPage(errorCode, errorPage);
 		}
 		else if (key == "location")

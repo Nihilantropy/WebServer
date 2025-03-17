@@ -17,3 +17,5 @@ std::string	trimRight( const std::string& str, const std::string& trimChars );
 std::string	trimLeft( const std::string& str, const std::string& trimChars );
 
 std::vector<std::string>	split( const std::string& str, char delimiter );
+
+std::string extractDirectiveValue(const std::string& line, const std::string& directiveName);

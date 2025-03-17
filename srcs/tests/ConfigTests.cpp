@@ -112,7 +112,7 @@ bool ConfigTests::testBasicParsing()
         if (location->getPath() != "/" ||
             location->getRoot() != "/var/www/html" ||
             location->getAllowedMethods().size() != 2 ||
-            !location->getAutoIndex() ||
+            location->getAutoIndex() ||
             location->getIndex() != "index.html")
             return false;
         

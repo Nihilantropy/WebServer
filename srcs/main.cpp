@@ -6,7 +6,7 @@
 int main(int argc, char **argv)
 {
     // Check if we should run tests
-    if (argc > 1 && std::string(argv[1]) == "--test") {
+    if (argc > 1 && (std::string(argv[1]) == "--test" || std::string(argv[1]) == "-t")) {
         std::cout << "Running configuration tests..." << std::endl;
         ConfigTests::runAllTests();
         return 0;
