@@ -8,6 +8,8 @@
 #include "../config/parser/ServerConfig.hpp"
 #include "../http/Request.hpp"
 #include "../http/Response.hpp"
+#include "../utils/FileUtils.hpp"
+#include "../http/MultipartParser.hpp"
 
 /**
  * @brief Class to manage an individual client connection
@@ -157,4 +159,11 @@ private:
     void _handleDefault();
     void _handleError(int statusCode);
     std::string _getErrorPage(int statusCode);
+
+    // File handling methods
+    LocationConfig* _findLocation(const std::string& requestPath);
+    void _handleRedirection(const LocationConfig& location);
+    void _handleDirectory(const std::string& fsPath, const std::string& requestPath, const LocationConfig& location);
+    void _serveFile(const std::string& fsPath);
+    void _handleCgi(const std::string& fsPath, const LocationConfig& location);
 };
