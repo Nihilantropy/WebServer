@@ -1,0 +1,146 @@
+#include "LocationConfigValidator.hpp"
+
+LocationConfigValidator::LocationConfigValidator(const LocationConfig& locationConfig) : _locationConfig(locationConfig)
+{
+    _validate();
+}
+
+LocationConfigValidator::~LocationConfigValidator() {}
+
+void LocationConfigValidator::_validate(void) const
+{
+    _validatePath();
+    _validateRoot();
+    _validateAllowedMethods();
+    _validateIndex();
+    _validateCgi();
+    _validateUploadDir();
+    _validateRedirection();
+}
+
+void LocationConfigValidator::_validatePath(void) const
+{
+    const std::string& path = _locationConfig.getPath();
+    
+    // Path should not be empty
+    if (path.empty()) {
+        throw ValidationException("Location path cannot be empty");
+    }
+    
+    // Path should start with /
+    if (path[0] != '/') {
+        throw ValidationException("Location path must start with /: " + path);
+    }
+}
+
+void LocationConfigValidator::_validateRoot(void) const
+{
+    const std::string& root = _locationConfig.getRoot();
+    
+    // Root should not be empty
+    if (root.empty()) {
+        throw ValidationException("Root directory cannot be empty for location: " + _locationConfig.getPath());
+    }
+    
+    // Could add additional validation here, like checking if directory exists
+    // But that might be more appropriate at server startup
+}
+
+void LocationConfigValidator::_validateAllowedMethods(void) const
+{
+    const std::vector<std::string>& methods = _locationConfig.getAllowedMethods();
+    
+    // Methods should not be empty
+    if (methods.empty()) {
+        throw ValidationException("No HTTP methods allowed for location: " + _locationConfig.getPath());
+    }
+    
+    // Validate each method
+    for (std::vector<std::string>::const_iterator it = methods.begin(); it != methods.end(); ++it) {
+        if (*it != "GET" && *it != "POST" && *it != "DELETE") {
+            throw ValidationException("Invalid HTTP method: " + *it + " for location: " + _locationConfig.getPath());
+        }
+    }
+}
+
+void LocationConfigValidator::_validateIndex(void) const
+{
+    // If autoindex is off, index should be provided
+    if (!_locationConfig.getAutoIndex() && _locationConfig.getIndex().empty()) {
+        throw ValidationException("Index file must be specified when autoindex is off for location: " + _locationConfig.getPath());
+    }
+}
+
+void LocationConfigValidator::_validateCgi(void) const
+{
+    const std::vector<std::string>& cgiExtensions = _locationConfig.getCgiExtentions();
+    const std::string& cgiPath = _locationConfig.getCgiPath();
+    
+    // If CGI extensions are specified, CGI path should also be specified
+    if (!cgiExtensions.empty() && cgiPath.empty()) {
+        throw ValidationException("CGI path must be specified when CGI extensions are defined for location: " + _locationConfig.getPath());
+    }
+    
+    // Validate each CGI extension
+    for (std::vector<std::string>::const_iterator it = cgiExtensions.begin(); it != cgiExtensions.end(); ++it) {
+        // Extension should start with a dot
+        if ((*it)[0] != '.') {
+            throw ValidationException("CGI extension must start with a dot: " + *it);
+        }
+    }
+}
+
+void LocationConfigValidator::_validateUploadDir(void) const
+{
+    // If upload directory is specified, it should exist
+    const std::string& uploadDir = _locationConfig.getUploadDir();
+    if (!uploadDir.empty()) {
+        // Check if POST is allowed
+        bool postAllowed = false;
+        const std::vector<std::string>& methods = _locationConfig.getAllowedMethods();
+        for (std::vector<std::string>::const_iterator it = methods.begin(); it != methods.end(); ++it) {
+            if (*it == "POST") {
+                postAllowed = true;
+                break;
+            }
+        }
+        
+        if (!postAllowed) {
+            throw ValidationException("Upload directory specified but POST method not allowed for location: " + _locationConfig.getPath());
+        }
+        
+        // Could check if directory exists, but that might be more appropriate at server startup
+    }
+}
+
+void LocationConfigValidator::_validateRedirection(void) const
+{
+    // If redirection is specified, it should be valid
+    const std::string& redirection = _locationConfig.getRedirection();
+    if (!redirection.empty()) {
+        // Parse redirection string to get status code and redirect URL
+        std::istringstream iss(redirection);
+        std::string token;
+        int statusCode;
+        std::string redirectUrl;
+        
+        // Skip the "return" keyword
+        iss >> token;
+        
+        // Get status code
+        iss >> statusCode;
+        
+        // Get redirect URL
+        iss >> redirectUrl;
+        
+        // Validate status code (should be 3xx)
+        if (statusCode < 300 || statusCode > 399) {
+            throw ValidationException("Invalid redirect status code: " + std::to_string(statusCode) + " for location: " + _locationConfig.getPath());
+        }
+        
+        // Validate redirect URL
+        if (redirectUrl.empty()) {
+            throw ValidationException("Redirect URL cannot be empty for location: " + _locationConfig.getPath());
+        }
+    }
+}
