@@ -8,6 +8,7 @@
 #include <string.h>
 #include "../http/StatusCodes.hpp"
 #include "../cgi/CGIHandler.hpp"
+#include "../utils/StringUtils.hpp"
 
 Connection::Connection(int clientFd, struct sockaddr_in clientAddr, ServerConfig* config)
     : _clientFd(clientFd), _clientAddr(clientAddr), _serverConfig(config),
