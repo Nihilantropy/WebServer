@@ -1,8 +1,8 @@
+#include "../utils/StringUtils.hpp"
 #include "MultipartParser.hpp"
 #include <sstream>
 #include <fstream>
 #include <iostream>
-#include "../utils/utils.hpp"
 
 MultipartParser::MultipartParser(const std::string& contentType, const std::string& body)
     : _boundary(_extractBoundary(contentType)), _body(body), _fields(), _files()
@@ -36,7 +36,7 @@ std::string MultipartParser::_extractBoundary(const std::string& contentType)
     }
     
     // Trim whitespace
-    boundary = trim(boundary, whiteSpaces);
+    boundary = StringUtils::trim(boundary, whiteSpaces);
     
     return boundary;
 }
@@ -177,8 +177,8 @@ std::map<std::string, std::string> MultipartParser::_parsePartHeaders(const std:
         std::string value = line.substr(colonPos + 1);
         
         // Trim whitespace
-        name = trim(name, whiteSpaces);
-        value = trim(value, whiteSpaces);
+        name = StringUtils::trim(name, whiteSpaces);
+        value = StringUtils::trim(value, whiteSpaces);
         
         // Convert name to lowercase for case-insensitive matching
         for (size_t i = 0; i < name.length(); ++i) {
@@ -203,7 +203,7 @@ std::map<std::string, std::string> MultipartParser::_parseContentDisposition(con
         std::string part = contentDisposition.substr(start, end - start);
         
         // Trim whitespace
-        part = trim(part, whiteSpaces);
+        part = StringUtils::trim(part, whiteSpaces);
         
         // Check if this is the form-data part
         if (part == "form-data") {
@@ -216,8 +216,8 @@ std::map<std::string, std::string> MultipartParser::_parseContentDisposition(con
                 std::string value = part.substr(equalPos + 1);
                 
                 // Trim whitespace
-                name = trim(name, whiteSpaces);
-                value = trim(value, whiteSpaces);
+                name = StringUtils::trim(name, whiteSpaces);
+                value = StringUtils::trim(value, whiteSpaces);
                 
                 // Remove quotes if present
                 if (!value.empty() && value[0] == '"' && value[value.length() - 1] == '"') {
@@ -235,7 +235,7 @@ std::map<std::string, std::string> MultipartParser::_parseContentDisposition(con
     
     // Process the last part
     std::string part = contentDisposition.substr(start);
-    part = trim(part, whiteSpaces);
+    part = StringUtils::trim(part, whiteSpaces);
     
     // Check if this is the form-data part
     if (part == "form-data") {
@@ -248,8 +248,8 @@ std::map<std::string, std::string> MultipartParser::_parseContentDisposition(con
             std::string value = part.substr(equalPos + 1);
             
             // Trim whitespace
-            name = trim(name, whiteSpaces);
-            value = trim(value, whiteSpaces);
+            name = StringUtils::trim(name, whiteSpaces);
+            value = StringUtils::trim(value, whiteSpaces);
             
             // Remove quotes if present
             if (!value.empty() && value[0] == '"' && value[value.length() - 1] == '"') {

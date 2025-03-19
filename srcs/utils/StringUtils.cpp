@@ -1,4 +1,8 @@
+#include "../utils/StringUtils.hpp"
+#include "../../utils/StringUtils.hpp"
+#include "../utils/StringUtils.hpp"
 #include "StringUtils.hpp"
+#include "../../utils/StringUtils.hpp"
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -73,7 +77,7 @@ std::string StringUtils::extractDirectiveValue(const std::string& line, const st
     
     // Trim again after removing semicolon
     value = trim(value);
-    
+
     return value;
 }
 

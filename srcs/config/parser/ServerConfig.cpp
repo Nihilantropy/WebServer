@@ -1,3 +1,6 @@
+#include "../utils/StringUtils.hpp"
+#include "../../utils/StringUtils.hpp"
+#include "../utils/StringUtils.hpp"
 #include "ServerConfig.hpp"
 
 ServerConfig::ServerConfig()
@@ -83,7 +86,7 @@ size_t	ServerConfig::_parseSize( const std::string& sizeStr )
 	if (sizeStr.empty())
 		throw ConfigException("client_max_body_size: Invalid size (empty value).");
 	
-	std::string trimmedStr = trim(sizeStr, whiteSpaces + ";");
+	std::string trimmedStr = StringUtils::trim(sizeStr, whiteSpaces + ";");
 	size_t		multiplier = 1;
 	std::string	numPart = sizeStr;
 
@@ -120,7 +123,7 @@ void ServerConfig::parseServerBlock(std::ifstream& file)
 
 	while (std::getline(file, line))
 	{
-		line = trim(line, whiteSpaces);
+		line = StringUtils::trim(line, whiteSpaces);
 		if (line.empty() || line[0] == '#')
 			continue;
 
@@ -130,7 +133,7 @@ void ServerConfig::parseServerBlock(std::ifstream& file)
 
 		if (key == "listen")
 		{
-			std::string listenValue = extractDirectiveValue(line, key);
+			std::string listenValue = StringUtils::extractDirectiveValue(line, key);
 			
 			size_t colon = listenValue.find(':');
 			if (colon != std::string::npos)
@@ -143,18 +146,18 @@ void ServerConfig::parseServerBlock(std::ifstream& file)
 		}
 		else if (key == "server_name")
 		{
-			std::string value = extractDirectiveValue(line, key);
-			std::vector<std::string> names = split(value, SPACE);
+			std::string value = StringUtils::extractDirectiveValue(line, key);
+			std::vector<std::string> names = StringUtils::slpit(value, SPACE);
 			setServerNames(names);
 		}
 		else if (key == "client_max_body_size")
 		{
-			std::string value = extractDirectiveValue(line, key);
+			std::string value = StringUtils::extractDirectiveValue(line, key);
 			setClientMaxBodySize(_parseSize(value));
 		}
 		else if (key == "error_page")
 		{
-			std::string value = extractDirectiveValue(line, key);
+			std::string value = StringUtils::extractDirectiveValue(line, key);
 			std::istringstream valueIss(value);
 			
 			int errorCode;

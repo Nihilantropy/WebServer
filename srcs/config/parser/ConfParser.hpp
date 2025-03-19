@@ -5,7 +5,6 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
-#include "../../utils/utils.hpp"
 #include "../../exceptions/exceptions.hpp"
 #include "../validate/ServerConfigValidator.hpp"
 #include "../defaults/ServerConfigDefaults.hpp"

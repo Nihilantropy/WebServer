@@ -212,12 +212,4 @@ public:
      * @return std::string Method string
      */
     static std::string methodToString(Method method);
-    
-    /**
-     * @brief URL decode a string
-     * 
-     * @param str String to decode
-     * @return std::string Decoded string
-     */
-    static std::string urlDecode(const std::string& str);
 };

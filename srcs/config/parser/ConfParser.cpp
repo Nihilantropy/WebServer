@@ -1,3 +1,4 @@
+#include "../../utils/StringUtils.hpp"
 #include "ConfParser.hpp"
 #include <sstream>
 
@@ -64,7 +65,7 @@ void	ConfParser::_parseConfigFile( void )
 	
 	while (std::getline(_configFile, line))
 	{
-		line = trim(line, whiteSpaces);
+		line = StringUtils::trim(line, whiteSpaces);
 		if (line.empty() || line[0] == '#')
 			continue;
 

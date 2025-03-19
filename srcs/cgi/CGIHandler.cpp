@@ -1,4 +1,8 @@
+#include "../utils/StringUtils.hpp"
+#include "../../utils/StringUtils.hpp"
+#include "../utils/StringUtils.hpp"
 #include "CGIHandler.hpp"
+#include "../../utils/StringUtils.hpp"
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -407,8 +411,8 @@ void CGIHandler::_parseCGIOutput()
         std::string value = line.substr(colonPos + 1);
         
         // Trim whitespace
-        name = trim(name, whiteSpaces);
-        value = trim(value, whiteSpaces);
+        name = StringUtils::trim(name, whiteSpaces);
+        value = StringUtils::trim(value, whiteSpaces);
         
         // Convert name to lowercase for case-insensitive matching
         std::transform(name.begin(), name.end(), name.begin(), ::tolower);

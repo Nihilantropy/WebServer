@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../utils/StringUtils.hpp"
+#include "../../utils/StringUtils.hpp"
 #include <string>
 #include <vector>
 #include <map>

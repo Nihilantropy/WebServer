@@ -1,3 +1,4 @@
+#include "../utils/StringUtils.hpp"
 #include "Headers.hpp"
 #include <algorithm>
 #include <cstring>
@@ -93,8 +94,8 @@ bool Headers::parse(const std::string& str)
         std::string value = line.substr(colonPos + 1);
         
         // Trim whitespace
-        name = trim(name, whiteSpaces);
-        value = trim(value, whiteSpaces);
+        name = StringUtils::trim(name, whiteSpaces);
+        value = StringUtils::trim(value, whiteSpaces);
         
         set(name, value);
     }

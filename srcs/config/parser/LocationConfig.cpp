@@ -68,7 +68,7 @@ void LocationConfig::parseLocationBlock(std::ifstream& file)
 
 	while (std::getline(file, line))
 	{
-		line = trim(line, whiteSpaces);
+		line = StringUtils::trim(line, whiteSpaces);
 		if (line.empty() || line[0] == '#')
 			continue;
 
@@ -78,40 +78,40 @@ void LocationConfig::parseLocationBlock(std::ifstream& file)
 
 		if (key == "root")
 		{
-			setRoot(extractDirectiveValue(line, key));
+			setRoot(StringUtils::extractDirectiveValue(line, key));
 		}
 		else if (key == "allowed_methods")
 		{
-			std::string value = extractDirectiveValue(line, key);
-			std::vector<std::string> methods = split(value, SPACE);
+			std::string value = StringUtils::extractDirectiveValue(line, key);
+			std::vector<std::string> methods = StringUtils::slpit(value, SPACE);
 			setAllowedMethods(methods);
 		}
 		else if (key == "index")
 		{
-			setIndex(extractDirectiveValue(line, key));
+			setIndex(StringUtils::extractDirectiveValue(line, key));
 		}
 		else if (key == "autoindex")
 		{
-			std::string value = extractDirectiveValue(line, key);
+			std::string value = StringUtils::extractDirectiveValue(line, key);
 			setAutoIndex(value == "on");
 		}
 		else if (key == "cgi_extension")
 		{
-			std::string value = extractDirectiveValue(line, key);
-			std::vector<std::string> extensions = split(value, SPACE);
+			std::string value = StringUtils::extractDirectiveValue(line, key);
+			std::vector<std::string> extensions = StringUtils::slpit(value, SPACE);
 			setCgiExtentions(extensions);
 		}
 		else if (key == "cgi_path")
 		{
-			setCgiPath(extractDirectiveValue(line, key));
+			setCgiPath(StringUtils::extractDirectiveValue(line, key));
 		}
 		else if (key == "upload_dir")
 		{
-			setUploadDir(extractDirectiveValue(line, key));
+			setUploadDir(StringUtils::extractDirectiveValue(line, key));
 		}
 		else if (key == "return")
 		{
-			setRedirection(extractDirectiveValue(line, key));
+			setRedirection(StringUtils::extractDirectiveValue(line, key));
 		}
 		else if (key == "}")
 		{
