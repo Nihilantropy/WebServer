@@ -11,7 +11,7 @@
 
 ## Development Pathway
 
-### Phase 1: Configuration Completion (1-2 days)
+### Phase 1: Configuration Completion
 
 - [ ] **Complete Configuration Validation**
   - Implement `ServerConfigValidator::_validate()` fully
@@ -25,7 +25,7 @@
   - Improve error messages for configuration issues
   - Add validation for route conflicts
 
-### Phase 2: HTTP Server Core (3-5 days)
+### Phase 2: HTTP Server Core
 
 - [ ] **Socket Management**
   - Create Socket class for socket operations
@@ -48,7 +48,7 @@
   - Manage connection timeouts
   - Implement proper connection cleanup
 
-### Phase 3: HTTP Protocol Implementation (3-4 days)
+### Phase 3: HTTP Protocol Implementation
 
 - [ ] **HTTP Request Parsing**
   - Create HTTP Request class
@@ -67,7 +67,7 @@
   - Implement proper error responses
   - Create default error pages
 
-### Phase 4: Request Handlers (3-4 days)
+### Phase 4: Request Handlers
 
 - [ ] **Handler Architecture**
   - Create base RequestHandler interface
@@ -94,7 +94,7 @@
   - Implement on/off toggle based on config
   - Style the directory listing output
 
-### Phase 5: Advanced Features (4-6 days)
+### Phase 5: Advanced Features
 
 - [ ] **CGI Implementation**
   - Create CGI execution environment
@@ -113,7 +113,7 @@
   - Support various redirect types (301, 302, 307, etc.)
   - Handle relative and absolute redirects
 
-### Phase 6: Testing and Refinement (3-5 days)
+### Phase 6: Testing and Refinement
 
 - [ ] **Unit Testing**
   - Create tests for configuration parsing
@@ -135,7 +135,7 @@
   - Ensure consistent behavior
   - Fix any browser-specific issues
 
-### Phase 7: Documentation and Finalization (2-3 days)
+### Phase 7: Documentation and Finalization
 
 - [ ] **Code Documentation**
   - Complete class and method documentation

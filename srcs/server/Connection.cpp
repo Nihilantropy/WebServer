@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string.h>
 #include "../http/StatusCodes.hpp"
+#include "../cgi/CGIHandler.hpp"
 
 Connection::Connection(int clientFd, struct sockaddr_in clientAddr, ServerConfig* config)
     : _clientFd(clientFd), _clientAddr(clientAddr), _serverConfig(config),
@@ -413,22 +414,18 @@ void Connection::_serveFile(const std::string& fsPath)
 
 void Connection::_handleCgi(const std::string& fsPath, const LocationConfig& location)
 {
-    // TODO: Implement CGI handling
-    // For now, just return a placeholder response
-    std::string responseBody = "<html>\r\n"
-                               "<head><title>CGI Not Implemented</title></head>\r\n"
-                               "<body>\r\n"
-                               "  <h1>CGI Support Coming Soon</h1>\r\n"
-                               "  <p>The requested file would be handled by CGI:</p>\r\n"
-                               "  <ul>\r\n"
-                               "    <li>File: " + fsPath + "</li>\r\n"
-                               "    <li>CGI Path: " + location.getCgiPath() + "</li>\r\n"
-                               "  </ul>\r\n"
-                               "</body>\r\n"
-                               "</html>\r\n";
+    // Create CGI handler
+    CGIHandler cgiHandler;
     
-    _response.setStatusCode(HTTP_STATUS_OK);
-    _response.setBody(responseBody, "text/html");
+    // Execute CGI script
+    if (cgiHandler.executeCGI(_request, fsPath, location, _response)) {
+        // CGI execution successful, response has been set by CGIHandler
+        std::cout << "CGI execution successful for: " << fsPath << std::endl;
+    } else {
+        // CGI execution failed
+        std::cerr << "CGI execution failed for: " << fsPath << std::endl;
+        _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+    }
 }
 
 void Connection::_handlePostRequest()
