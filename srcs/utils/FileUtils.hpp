@@ -2,6 +2,13 @@
 
 #include <string>
 #include <map>
+#include <vector>
+#include <iomanip>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <limits.h>
 #include "../config/parser/LocationConfig.hpp"
 
 /**
@@ -33,6 +40,39 @@ public:
     static bool isDirectory(const std::string& path);
     
     /**
+     * @brief Check if a file is readable
+     * 
+     * @param path File path
+     * @return true if file exists and is readable
+     */
+    static bool isReadable(const std::string& path);
+    
+    /**
+     * @brief Check if a file is writable
+     * 
+     * @param path File path
+     * @return true if file exists and is writable
+     */
+    static bool isWritable(const std::string& path);
+    
+    /**
+     * @brief Create a directory if it doesn't exist
+     * 
+     * @param path Directory path
+     * @return true if directory exists or was created successfully
+     */
+    static bool createDirectory(const std::string& path);
+    
+    /**
+     * @brief Check if a path is within a parent directory
+     * 
+     * @param path Path to check
+     * @param parentDir Parent directory
+     * @return true if path is within parentDir
+     */
+    static bool isPathWithinDirectory(const std::string& path, const std::string& parentDir);
+    
+    /**
      * @brief Get the contents of a file
      * 
      * @param path File path
@@ -47,6 +87,14 @@ public:
      * @return size_t File size, 0 if error
      */
     static size_t getFileSize(const std::string& path);
+    
+    /**
+     * @brief Format a file size in a human-readable format
+     * 
+     * @param size File size in bytes
+     * @return std::string Formatted size (e.g., "1.2 MB")
+     */
+    static std::string formatFileSize(size_t size);
     
     /**
      * @brief Get the MIME type for a file extension

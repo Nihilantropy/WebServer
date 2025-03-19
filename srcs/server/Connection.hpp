@@ -166,4 +166,17 @@ private:
     void _handleDirectory(const std::string& fsPath, const std::string& requestPath, const LocationConfig& location);
     void _serveFile(const std::string& fsPath);
     void _handleCgi(const std::string& fsPath, const LocationConfig& location);
+    
+    // HTTP method handlers
+    void _handlePostRequest();
+    void _handleDeleteRequest();
+    void _handleFileUpload(const LocationConfig& location);
+    
+    /**
+     * @brief Prepare the upload directory for file storage
+     * 
+     * @param uploadDir Path to the upload directory
+     * @return true if directory exists and is writable, false otherwise
+     */
+    bool _prepareUploadDirectory(const std::string& uploadDir);
 };

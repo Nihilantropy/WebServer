@@ -468,6 +468,35 @@ void Connection::_handlePostRequest()
     _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
 }
 
+/**
+ * @brief Prepare the upload directory for file storage
+ * 
+ * @param uploadDir Path to the upload directory
+ * @return true if directory exists and is writable, false otherwise
+ */
+bool Connection::_prepareUploadDirectory(const std::string& uploadDir)
+{
+    // Check if directory exists
+    if (FileUtils::isDirectory(uploadDir)) {
+        // Check if directory is writable
+        if (!FileUtils::isWritable(uploadDir)) {
+            std::cerr << "Upload directory is not writable: " << uploadDir << std::endl;
+            return false;
+        }
+        return true;
+    }
+    
+    // Try to create the directory
+    if (!FileUtils::createDirectory(uploadDir)) {
+        std::cerr << "Failed to create upload directory: " << uploadDir << " - " << strerror(errno) << std::endl;
+        return false;
+    }
+    
+    return true;
+}
+
+// Then update the _handleFileUpload method to use this function
+
 void Connection::_handleFileUpload(const LocationConfig& location)
 {
     // Get content type to determine how to handle the upload
@@ -492,53 +521,144 @@ void Connection::_handleFileUpload(const LocationConfig& location)
     if (files.empty()) {
         // No files were uploaded
         std::string responseBody = "<html>\r\n"
-                                   "<head><title>No Files Uploaded</title></head>\r\n"
-                                   "<body>\r\n"
-                                   "  <h1>No Files Uploaded</h1>\r\n"
-                                   "  <p>No files were found in the upload.</p>\r\n"
-                                   "</body>\r\n"
-                                   "</html>\r\n";
+                                "<head><title>No Files Uploaded</title></head>\r\n"
+                                "<body>\r\n"
+                                "  <h1>No Files Uploaded</h1>\r\n"
+                                "  <p>No files were found in the upload.</p>\r\n"
+                                "</body>\r\n"
+                                "</html>\r\n";
         
         _response.setStatusCode(HTTP_STATUS_BAD_REQUEST);
         _response.setBody(responseBody, "text/html");
         return;
     }
     
-    // TODO: Implement actual file saving
-    // For now, just generate a response showing the files
+    // Get the upload directory from the location configuration
+    std::string uploadDir = location.getUploadDir();
     
-    std::stringstream responseBody;
-    responseBody << "<html>\r\n"
-                 << "<head><title>Upload Successful</title></head>\r\n"
-                 << "<body>\r\n"
-                 << "  <h1>Upload Successful</h1>\r\n"
-                 << "  <p>Received " << files.size() << " file(s).</p>\r\n"
-                 << "  <ul>\r\n";
-    
-    for (size_t i = U0; i < files.size(); ++i) {
-        responseBody << "    <li>\r\n"
-                     << "      <strong>Field Name:</strong> " << files[i].name << "<br>\r\n"
-                     << "      <strong>Filename:</strong> " << files[i].filename << "<br>\r\n"
-                     << "      <strong>Content Type:</strong> " << files[i].contentType << "<br>\r\n"
-                     << "      <strong>Size:</strong> " << files[i].content.size() << " bytes<br>\r\n"
-                     << "    </li>\r\n";
+    // Ensure upload directory exists and is writable
+    if (!_prepareUploadDirectory(uploadDir)) {
+        _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+        return;
     }
     
-    responseBody << "  </ul>\r\n"
-                 << "  <p>The files would be saved to: " << location.getUploadDir() << "</p>\r\n"
-                 << "  <p>Form Fields:</p>\r\n"
-                 << "  <ul>\r\n";
+    // Ensure upload directory ends with a slash
+    if (uploadDir[uploadDir.length() - 1] != '/') {
+        uploadDir += '/';
+    }
+    
+    // Save each file to the upload directory
+    std::stringstream responseBody;
+    responseBody << "<html>\r\n"
+                << "<head><title>Upload Successful</title></head>\r\n"
+                << "<body>\r\n"
+                << "  <h1>Upload Successful</h1>\r\n"
+                << "  <p>Received " << files.size() << " file(s).</p>\r\n"
+                << "  <ul>\r\n";
+    
+    size_t successfulUploads = 0;
+    std::vector<std::string> savedPaths;
+    
+    for (size_t i = 0; i < files.size(); ++i) {
+        // Sanitize filename - replace any problematic characters
+        std::string safeFilename = files[i].filename;
+        
+        // Remove any path information (for security)
+        size_t lastSlash = safeFilename.find_last_of("/\\");
+        if (lastSlash != std::string::npos) {
+            safeFilename = safeFilename.substr(lastSlash + 1);
+        }
+        
+        // Make sure filename is not empty after sanitization
+        if (safeFilename.empty()) {
+            safeFilename = "unnamed_file";
+        }
+        
+        // Create a unique filename if a file with this name already exists
+        std::string baseFilename = safeFilename;
+        std::string extension = "";
+        
+        // Extract extension if present
+        size_t dotPos = baseFilename.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            extension = baseFilename.substr(dotPos);
+            baseFilename = baseFilename.substr(0, dotPos);
+        }
+        
+        // Ensure filename is unique
+        std::string finalFilename = safeFilename;
+        int counter = 1;
+        
+        while (FileUtils::fileExists(uploadDir + finalFilename)) {
+            std::stringstream ss;
+            ss << baseFilename << "_" << counter << extension;
+            finalFilename = ss.str();
+            counter++;
+        }
+        
+        // Full path to save the file
+        std::string savePath = uploadDir + finalFilename;
+        
+        // Save the file
+        std::ofstream fileStream(savePath.c_str(), std::ios::binary);
+        if (fileStream.is_open()) {
+            fileStream.write(files[i].content.c_str(), files[i].content.size());
+            bool saveSuccess = !fileStream.bad();
+            fileStream.close();
+            
+            if (saveSuccess) {
+                successfulUploads++;
+                savedPaths.push_back(savePath);
+                
+                responseBody << "    <li>\r\n"
+                            << "      <strong>Field Name:</strong> " << files[i].name << "<br>\r\n"
+                            << "      <strong>Original Filename:</strong> " << files[i].filename << "<br>\r\n"
+                            << "      <strong>Saved As:</strong> " << finalFilename << "<br>\r\n"
+                            << "      <strong>Content Type:</strong> " << files[i].contentType << "<br>\r\n"
+                            << "      <strong>Size:</strong> " << files[i].content.size() << " bytes<br>\r\n"
+                            << "    </li>\r\n";
+            } else {
+                // Failed to write file
+                responseBody << "    <li>\r\n"
+                            << "      <strong>Error:</strong> Failed to write file " << files[i].filename << "<br>\r\n"
+                            << "    </li>\r\n";
+            }
+        } else {
+            // Failed to open file for writing
+            responseBody << "    <li>\r\n"
+                        << "      <strong>Error:</strong> Failed to open file for writing: " << files[i].filename << "<br>\r\n"
+                        << "    </li>\r\n";
+        }
+    }
+    
+    responseBody << "  </ul>\r\n";
+    
+    // Add form fields to response
+    responseBody << "  <h2>Form Fields:</h2>\r\n"
+                << "  <ul>\r\n";
     
     const std::map<std::string, std::string>& fields = parser.getFields();
     for (std::map<std::string, std::string>::const_iterator it = fields.begin(); it != fields.end(); ++it) {
         responseBody << "    <li><strong>" << it->first << ":</strong> " << it->second << "</li>\r\n";
     }
     
-    responseBody << "  </ul>\r\n"
-                 << "</body>\r\n"
-                 << "</html>\r\n";
+    responseBody << "  </ul>\r\n";
     
-    _response.setStatusCode(HTTP_STATUS_OK);
+    // Report summary
+    responseBody << "  <p><strong>Upload Summary:</strong> " 
+                << successfulUploads << " of " << files.size() 
+                << " files were uploaded successfully to " << uploadDir << "</p>\r\n";
+    
+    responseBody << "</body>\r\n"
+                << "</html>\r\n";
+    
+    // Check if any files were uploaded successfully
+    if (successfulUploads > 0) {
+        _response.setStatusCode(HTTP_STATUS_OK);
+    } else {
+        _response.setStatusCode(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+    }
+    
     _response.setBody(responseBody.str(), "text/html");
 }
 
@@ -551,6 +671,22 @@ void Connection::_handleDeleteRequest()
     LocationConfig* location = _findLocation(requestPath);
     if (!location) {
         _handleError(HTTP_STATUS_NOT_FOUND);
+        return;
+    }
+    
+    // Check if DELETE method is allowed for this location
+    const std::vector<std::string>& allowedMethods = location->getAllowedMethods();
+    bool deleteAllowed = false;
+    
+    for (std::vector<std::string>::const_iterator it = allowedMethods.begin(); it != allowedMethods.end(); ++it) {
+        if (*it == "DELETE") {
+            deleteAllowed = true;
+            break;
+        }
+    }
+    
+    if (!deleteAllowed) {
+        _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
         return;
     }
     
@@ -569,17 +705,38 @@ void Connection::_handleDeleteRequest()
         return;
     }
     
-    // TODO: Implement actual file deletion
-    // For now, just return a successful response
+    // Check if the file is outside the location's root directory (security check)
+    std::string rootDir = location->getRoot();
+    if (fsPath.find(rootDir) != 0) {
+        _handleError(HTTP_STATUS_FORBIDDEN);
+        return;
+    }
     
+    // Attempt to delete the file
+    if (remove(fsPath.c_str()) != 0) {
+        // Failed to delete the file
+        std::cerr << "Failed to delete file: " << fsPath << " - " << strerror(errno) << std::endl;
+        
+        // Different error responses based on the reason for failure
+        if (errno == EACCES || errno == EPERM) {
+            // Permission denied
+            _handleError(HTTP_STATUS_FORBIDDEN);
+        } else {
+            // Other errors
+            _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+        }
+        return;
+    }
+    
+    // File deleted successfully, create a response
     std::string responseBody = "<html>\r\n"
-                               "<head><title>Delete Successful</title></head>\r\n"
-                               "<body>\r\n"
-                               "  <h1>Delete Successful</h1>\r\n"
-                               "  <p>File deletion support is coming soon.</p>\r\n"
-                               "  <p>File: " + fsPath + "</p>\r\n"
-                               "</body>\r\n"
-                               "</html>\r\n";
+                              "<head><title>Delete Successful</title></head>\r\n"
+                              "<body>\r\n"
+                              "  <h1>Delete Successful</h1>\r\n"
+                              "  <p>The file has been successfully deleted.</p>\r\n"
+                              "  <p><strong>File:</strong> " + fsPath + "</p>\r\n"
+                              "</body>\r\n"
+                              "</html>\r\n";
     
     _response.setStatusCode(HTTP_STATUS_OK);
     _response.setBody(responseBody, "text/html");

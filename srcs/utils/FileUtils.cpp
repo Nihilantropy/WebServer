@@ -288,3 +288,71 @@ std::string FileUtils::resolvePath(const std::string& uriPath, const LocationCon
     // This is a fallback and should not normally be reached
     return root + uriPath;
 }
+
+// Implementation of new FileUtils methods
+// Add these to FileUtils.cpp
+
+bool FileUtils::isReadable(const std::string& path)
+{
+    return access(path.c_str(), R_OK) == 0;
+}
+
+bool FileUtils::isWritable(const std::string& path)
+{
+    return access(path.c_str(), W_OK) == 0;
+}
+
+bool FileUtils::createDirectory(const std::string& path)
+{
+    // Check if directory already exists
+    if (isDirectory(path)) {
+        return true;
+    }
+    
+    // Create directory with permissions 755 (rwxr-xr-x)
+    return mkdir(path.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) == 0;
+}
+
+bool FileUtils::isPathWithinDirectory(const std::string& path, const std::string& parentDir)
+{
+    // Convert both paths to absolute paths
+    char absPath[PATH_MAX];
+    char absParentDir[PATH_MAX];
+    
+    if (realpath(path.c_str(), absPath) == NULL || 
+        realpath(parentDir.c_str(), absParentDir) == NULL) {
+        return false;
+    }
+    
+    // Check if absPath starts with absParentDir
+    std::string absPathStr(absPath);
+    std::string absParentDirStr(absParentDir);
+    
+    // Ensure parent dir ends with a slash
+    if (absParentDirStr[absParentDirStr.length() - 1] != '/') {
+        absParentDirStr += '/';
+    }
+    
+    return absPathStr.find(absParentDirStr) == 0;
+}
+
+std::string FileUtils::formatFileSize(size_t size)
+{
+    const char* units[] = {"B", "KB", "MB", "GB"};
+    int unitIndex = 0;
+    double formattedSize = static_cast<double>(size);
+    
+    while (formattedSize >= 1024.0 && unitIndex < 3) {
+        formattedSize /= 1024.0;
+        unitIndex++;
+    }
+    
+    std::stringstream ss;
+    if (unitIndex == 0) {
+        ss << size << " " << units[unitIndex]; // No decimal places for bytes
+    } else {
+        ss << std::fixed << std::setprecision(1) << formattedSize << " " << units[unitIndex];
+    }
+    
+    return ss.str();
+}
