@@ -6,7 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <cstdlib>
-#include "../../utils/utils.hpp"
+#include "../../utils/StringUtils.hpp"
 #include "../../exceptions/exceptions.hpp"
 
 #include "LocationConfig.hpp"

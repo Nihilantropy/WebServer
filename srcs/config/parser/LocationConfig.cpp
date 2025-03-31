@@ -68,7 +68,7 @@ void LocationConfig::parseLocationBlock(std::ifstream& file)
 
 	while (std::getline(file, line))
 	{
-		line = StringUtils::trim(line, whiteSpaces);
+		line = StringUtils::trim(line, " \t");
 		if (line.empty() || line[0] == '#')
 			continue;
 
@@ -83,7 +83,7 @@ void LocationConfig::parseLocationBlock(std::ifstream& file)
 		else if (key == "allowed_methods")
 		{
 			std::string value = StringUtils::extractDirectiveValue(line, key);
-			std::vector<std::string> methods = StringUtils::slpit(value, SPACE);
+			std::vector<std::string> methods = StringUtils::split(value, ' ');
 			setAllowedMethods(methods);
 		}
 		else if (key == "index")
@@ -98,7 +98,7 @@ void LocationConfig::parseLocationBlock(std::ifstream& file)
 		else if (key == "cgi_extension")
 		{
 			std::string value = StringUtils::extractDirectiveValue(line, key);
-			std::vector<std::string> extensions = StringUtils::slpit(value, SPACE);
+			std::vector<std::string> extensions = StringUtils::split(value, ' ');
 			setCgiExtentions(extensions);
 		}
 		else if (key == "cgi_path")

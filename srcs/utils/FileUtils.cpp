@@ -6,6 +6,8 @@
 #include <ctime>
 #include <iomanip>
 #include <cstring>
+#include <algorithm> // Add this for std::sort
+#include <cstdlib>   // Add this for realpath
 
 bool FileUtils::fileExists(const std::string& path)
 {
@@ -206,10 +208,12 @@ std::string FileUtils::generateDirectoryListing(const std::string& dirPath, cons
         struct stat buffer;
         stat(fullPath.c_str(), &buffer);
         
-        // Format modification time
+        // Format modification time (C++98 compatible)
         std::stringstream modTime;
         struct tm* timeinfo = localtime(&buffer.st_mtime);
-        modTime << std::put_time(timeinfo, "%Y-%m-%d %H:%M:%S");
+        char timeBuf[64];
+        strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", timeinfo);
+        modTime << timeBuf;
         
         html << "        <tr>\r\n"
              << "            <td><a href=\"" << *it << "/\">" << *it << "/</a></td>\r\n"
@@ -224,20 +228,23 @@ std::string FileUtils::generateDirectoryListing(const std::string& dirPath, cons
         struct stat buffer;
         stat(fullPath.c_str(), &buffer);
         
-        // Format modification time
+        // Format modification time (C++98 compatible)
         std::stringstream modTime;
         struct tm* timeinfo = localtime(&buffer.st_mtime);
-        modTime << std::put_time(timeinfo, "%Y-%m-%d %H:%M:%S");
+        char timeBuf[64];
+        strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S", timeinfo);
+        modTime << timeBuf;
         
-        // Format size
-        std::string sizeStr;
+        // Format size (C++98 compatible)
+        std::stringstream sizeStream;
         if (buffer.st_size < 1024) {
-            sizeStr = std::to_string(buffer.st_size) + " B";
+            sizeStream << buffer.st_size << " B";
         } else if (buffer.st_size < 1024 * 1024) {
-            sizeStr = std::to_string(buffer.st_size / 1024) + " KB";
+            sizeStream << (buffer.st_size / 1024) << " KB";
         } else {
-            sizeStr = std::to_string(buffer.st_size / (1024 * 1024)) + " MB";
+            sizeStream << (buffer.st_size / (1024 * 1024)) << " MB";
         }
+        std::string sizeStr = sizeStream.str();
         
         html << "        <tr>\r\n"
              << "            <td><a href=\"" << *it << "\">" << *it << "</a></td>\r\n"
@@ -290,8 +297,6 @@ std::string FileUtils::resolvePath(const std::string& uriPath, const LocationCon
 }
 
 // Implementation of new FileUtils methods
-// Add these to FileUtils.cpp
-
 bool FileUtils::isReadable(const std::string& path)
 {
     return access(path.c_str(), R_OK) == 0;
@@ -302,15 +307,15 @@ bool FileUtils::isWritable(const std::string& path)
     return access(path.c_str(), W_OK) == 0;
 }
 
-bool FileUtils::createDirectory(const std::string& path)
+bool FileUtils::createDirectory(const std::string& path, mode_t mode)
 {
     // Check if directory already exists
     if (isDirectory(path)) {
         return true;
     }
     
-    // Create directory with permissions 755 (rwxr-xr-x)
-    return mkdir(path.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) == 0;
+    // Create directory with permissions 755 (rwxr-xr-x) by default
+    return mkdir(path.c_str(), mode) == 0;
 }
 
 bool FileUtils::isPathWithinDirectory(const std::string& path, const std::string& parentDir)
@@ -319,6 +324,7 @@ bool FileUtils::isPathWithinDirectory(const std::string& path, const std::string
     char absPath[PATH_MAX];
     char absParentDir[PATH_MAX];
     
+    // We need to use realpath which is POSIX, not std::
     if (realpath(path.c_str(), absPath) == NULL || 
         realpath(parentDir.c_str(), absParentDir) == NULL) {
         return false;

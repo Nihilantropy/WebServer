@@ -1,6 +1,3 @@
-#include "../utils/StringUtils.hpp"
-#include "../../utils/StringUtils.hpp"
-#include "../utils/StringUtils.hpp"
 #include "ServerConfig.hpp"
 
 ServerConfig::ServerConfig()
@@ -86,7 +83,7 @@ size_t	ServerConfig::_parseSize( const std::string& sizeStr )
 	if (sizeStr.empty())
 		throw ConfigException("client_max_body_size: Invalid size (empty value).");
 	
-	std::string trimmedStr = StringUtils::trim(sizeStr, whiteSpaces + ";");
+	std::string trimmedStr = StringUtils::trim(sizeStr, " \t;");
 	size_t		multiplier = 1;
 	std::string	numPart = sizeStr;
 
@@ -123,7 +120,7 @@ void ServerConfig::parseServerBlock(std::ifstream& file)
 
 	while (std::getline(file, line))
 	{
-		line = StringUtils::trim(line, whiteSpaces);
+		line = StringUtils::trim(line, " \t");
 		if (line.empty() || line[0] == '#')
 			continue;
 
@@ -147,7 +144,7 @@ void ServerConfig::parseServerBlock(std::ifstream& file)
 		else if (key == "server_name")
 		{
 			std::string value = StringUtils::extractDirectiveValue(line, key);
-			std::vector<std::string> names = StringUtils::slpit(value, SPACE);
+			std::vector<std::string> names = StringUtils::split(value, ' ');
 			setServerNames(names);
 		}
 		else if (key == "client_max_body_size")

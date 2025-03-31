@@ -1,8 +1,5 @@
-#include "../utils/StringUtils.hpp"
-#include "../../utils/StringUtils.hpp"
-#include "../utils/StringUtils.hpp"
 #include "CGIHandler.hpp"
-#include "../../utils/StringUtils.hpp"
+#include "../utils/StringUtils.hpp"  // Added for StringUtils::trim
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -11,7 +8,7 @@
 #include <sstream>
 #include <cstring>
 #include <cstdlib>
-#include "../utils/utils.hpp"
+#include <algorithm>  // Added for std::transform
 
 CGIHandler::CGIHandler()
     : _scriptPath(), _requestBody(), _responseBody(), _env(),
@@ -142,6 +139,9 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
 void CGIHandler::_setupEnvironment(const Request& request, const std::string& scriptPath, 
                                  const std::string& pathInfo, const LocationConfig& location)
 {
+    // Mark the location parameter as used to avoid the unused parameter warning
+    (void)location;
+
     // Clear previous environment
     _env.clear();
     
@@ -411,8 +411,8 @@ void CGIHandler::_parseCGIOutput()
         std::string value = line.substr(colonPos + 1);
         
         // Trim whitespace
-        name = StringUtils::trim(name, whiteSpaces);
-        value = StringUtils::trim(value, whiteSpaces);
+        name = StringUtils::trim(name, " \t");
+        value = StringUtils::trim(value, " \t");
         
         // Convert name to lowercase for case-insensitive matching
         std::transform(name.begin(), name.end(), name.begin(), ::tolower);

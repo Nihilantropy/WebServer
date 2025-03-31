@@ -1,13 +1,8 @@
-#include "../utils/StringUtils.hpp"
-#include "../../utils/StringUtils.hpp"
-#include "../utils/StringUtils.hpp"
 #include "Request.hpp"
-#include "../../utils/StringUtils.hpp"
 #include <sstream>
 #include <iostream>
 #include <cstdlib>
 #include <cctype>
-#include "../utils/utils.hpp"
 
 Request::Request()
     : _method(UNKNOWN), _uri(), _path(), _queryString(), _queryParams(), 
@@ -271,36 +266,12 @@ void Request::_parseQueryParams()
             std::string value = pair.substr(eqPos + 1);
             
             // URL decode key and value
-            _queryParams[urlDecode(key)] = urlDecode(value);
+            _queryParams[StringUtils::urlDecode(key)] = StringUtils::urlDecode(value);
         } else if (!pair.empty()) {
             // Handle parameters with no value
-            _queryParams[urlDecode(pair)] = "";
+            _queryParams[StringUtils::urlDecode(pair)] = "";
         }
     }
-}
-
-std::string Request::urlDecode(const std::string& str)
-{
-    std::string result;
-    result.reserve(str.size());
-    
-    for (size_t i = 0; i < str.size(); ++i) {
-        if (str[i] == '%' && i + 2 < str.size()) {
-            // Convert hex digits to character
-            std::string hex = str.substr(i + 1, 2);
-            int value;
-            std::istringstream iss(hex);
-            iss >> std::hex >> value;
-            result += static_cast<char>(value);
-            i += 2;
-        } else if (str[i] == '+') {
-            result += ' ';
-        } else {
-            result += str[i];
-        }
-    }
-    
-    return result;
 }
 
 void Request::reset()

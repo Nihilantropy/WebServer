@@ -3,7 +3,7 @@
 #include <map>
 #include <string>
 #include <sstream>
-#include "../utils/utils.hpp"
+#include "../utils/StringUtils.hpp"
 
 /**
  * @brief Class to represent and manipulate HTTP headers

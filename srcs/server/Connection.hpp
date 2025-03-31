@@ -170,7 +170,7 @@ private:
     // HTTP method handlers
     void _handlePostRequest();
     void _handleDeleteRequest();
-    void _handleFileUpload(const LocationConfig& location);
+    bool _handleFileUpload(const LocationConfig& location);
     
     /**
      * @brief Prepare the upload directory for file storage

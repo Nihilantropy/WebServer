@@ -3,6 +3,7 @@
 #include <vector>
 #include <map>
 #include <sys/poll.h>
+#include <cstddef>
 
 /**
  * @brief Wrapper class for poll() to manage multiple file descriptors

@@ -94,8 +94,8 @@ bool Headers::parse(const std::string& str)
         std::string value = line.substr(colonPos + 1);
         
         // Trim whitespace
-        name = StringUtils::trim(name, whiteSpaces);
-        value = StringUtils::trim(value, whiteSpaces);
+        name = StringUtils::trim(name, " \t");
+        value = StringUtils::trim(value, " \t");
         
         set(name, value);
     }

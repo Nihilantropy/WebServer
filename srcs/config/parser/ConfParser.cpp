@@ -65,7 +65,7 @@ void	ConfParser::_parseConfigFile( void )
 	
 	while (std::getline(_configFile, line))
 	{
-		line = StringUtils::trim(line, whiteSpaces);
+		line = StringUtils::trim(line, " \t");
 		if (line.empty() || line[0] == '#')
 			continue;
 

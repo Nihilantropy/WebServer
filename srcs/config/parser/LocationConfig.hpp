@@ -6,6 +6,7 @@
 #include <sstream>
 #include <fstream>
 #include "../../exceptions/exceptions.hpp"
+#include "../../utils/StringUtils.hpp"
 
 /**
  * @brief class to store location-specific info

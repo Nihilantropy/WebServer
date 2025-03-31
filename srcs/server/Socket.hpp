@@ -8,6 +8,7 @@
 #include <string>
 #include <cstring>
 #include <iostream>
+#include <cerrno>
 #include "../exceptions/exceptions.hpp"
 
 class Socket
