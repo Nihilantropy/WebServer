@@ -496,9 +496,13 @@ bool Connection::_prepareUploadDirectory(const std::string& uploadDir)
     return true;
 }
 
-// Then update the _handleFileUpload method to use this function
-
-void Connection::_handleFileUpload(const LocationConfig& location)
+/**
+ * @brief Handle file upload from POST request
+ * 
+ * @param location The location configuration for the request
+ * @return true if upload was successful, false otherwise
+ */
+bool Connection::_handleFileUpload(const LocationConfig& location)
 {
     // Get content type to determine how to handle the upload
     std::string contentType = _request.getHeaders().getContentType();
@@ -507,14 +511,20 @@ void Connection::_handleFileUpload(const LocationConfig& location)
     if (contentType.find("multipart/form-data") == std::string::npos) {
         // This is not a proper file upload
         _handleError(HTTP_STATUS_BAD_REQUEST);
-        return;
+        return false;
+    }
+    
+    // Check if client body size exceeds server limit
+    if (_request.getBody().size() > _serverConfig->getClientMaxBodySize()) {
+        _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
+        return false;
     }
     
     // Parse the multipart form data
     MultipartParser parser(contentType, _request.getBody());
     if (!parser.parse()) {
         _handleError(HTTP_STATUS_BAD_REQUEST);
-        return;
+        return false;
     }
     
     // Get the uploaded files
@@ -531,7 +541,7 @@ void Connection::_handleFileUpload(const LocationConfig& location)
         
         _response.setStatusCode(HTTP_STATUS_BAD_REQUEST);
         _response.setBody(responseBody, "text/html");
-        return;
+        return false;
     }
     
     // Get the upload directory from the location configuration
@@ -540,7 +550,7 @@ void Connection::_handleFileUpload(const LocationConfig& location)
     // Ensure upload directory exists and is writable
     if (!_prepareUploadDirectory(uploadDir)) {
         _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
-        return;
+        return false;
     }
     
     // Ensure upload directory ends with a slash
@@ -551,9 +561,9 @@ void Connection::_handleFileUpload(const LocationConfig& location)
     // Save each file to the upload directory
     std::stringstream responseBody;
     responseBody << "<html>\r\n"
-                << "<head><title>Upload Successful</title></head>\r\n"
+                << "<head><title>Upload Result</title></head>\r\n"
                 << "<body>\r\n"
-                << "  <h1>Upload Successful</h1>\r\n"
+                << "  <h1>Upload Result</h1>\r\n"
                 << "  <p>Received " << files.size() << " file(s).</p>\r\n"
                 << "  <ul>\r\n";
     
@@ -561,89 +571,107 @@ void Connection::_handleFileUpload(const LocationConfig& location)
     std::vector<std::string> savedPaths;
     
     for (size_t i = 0; i < files.size(); ++i) {
-        // Sanitize filename - replace any problematic characters
-        std::string safeFilename = files[i].filename;
+        // ===== FILE VALIDATION =====
         
-        // Remove any path information (for security)
-        size_t lastSlash = safeFilename.find_last_of("/\\");
-        if (lastSlash != std::string::npos) {
-            safeFilename = safeFilename.substr(lastSlash + 1);
+        // Sanitize filename - replace any problematic characters
+        std::string originalFilename = files[i].filename;
+        std::string safeFilename = _sanitizeFilename(originalFilename);
+        
+        // Check if filename is valid after sanitization
+        if (safeFilename.empty()) {
+            responseBody << "    <li>\r\n"
+                        << "      <strong>Error:</strong> Invalid filename: " << originalFilename << "<br>\r\n"
+                        << "    </li>\r\n";
+            continue;
         }
         
-        // Make sure filename is not empty after sanitization
-        if (safeFilename.empty()) {
-            safeFilename = "unnamed_file";
+        // Validate file type (if needed)
+        if (!_isAllowedFileType(safeFilename)) {
+            responseBody << "    <li>\r\n"
+                        << "      <strong>Error:</strong> File type not allowed: " << originalFilename << "<br>\r\n"
+                        << "    </li>\r\n";
+            continue;
+        }
+        
+        // Validate file size (individual file check)
+        if (files[i].content.size() > _serverConfig->getClientMaxBodySize()) {
+            responseBody << "    <li>\r\n"
+                        << "      <strong>Error:</strong> File too large: " << originalFilename << "<br>\r\n"
+                        << "    </li>\r\n";
+            continue;
         }
         
         // Create a unique filename if a file with this name already exists
-        std::string baseFilename = safeFilename;
-        std::string extension = "";
-        
-        // Extract extension if present
-        size_t dotPos = baseFilename.find_last_of('.');
-        if (dotPos != std::string::npos) {
-            extension = baseFilename.substr(dotPos);
-            baseFilename = baseFilename.substr(0, dotPos);
-        }
-        
-        // Ensure filename is unique
-        std::string finalFilename = safeFilename;
-        int counter = 1;
-        
-        while (FileUtils::fileExists(uploadDir + finalFilename)) {
-            std::stringstream ss;
-            ss << baseFilename << "_" << counter << extension;
-            finalFilename = ss.str();
-            counter++;
-        }
+        std::string finalFilename = _getUniqueFilename(uploadDir, safeFilename);
         
         // Full path to save the file
         std::string savePath = uploadDir + finalFilename;
         
-        // Save the file
-        std::ofstream fileStream(savePath.c_str(), std::ios::binary);
-        if (fileStream.is_open()) {
-            fileStream.write(files[i].content.c_str(), files[i].content.size());
-            bool saveSuccess = !fileStream.bad();
-            fileStream.close();
-            
-            if (saveSuccess) {
-                successfulUploads++;
-                savedPaths.push_back(savePath);
-                
-                responseBody << "    <li>\r\n"
-                            << "      <strong>Field Name:</strong> " << files[i].name << "<br>\r\n"
-                            << "      <strong>Original Filename:</strong> " << files[i].filename << "<br>\r\n"
-                            << "      <strong>Saved As:</strong> " << finalFilename << "<br>\r\n"
-                            << "      <strong>Content Type:</strong> " << files[i].contentType << "<br>\r\n"
-                            << "      <strong>Size:</strong> " << files[i].content.size() << " bytes<br>\r\n"
-                            << "    </li>\r\n";
-            } else {
-                // Failed to write file
-                responseBody << "    <li>\r\n"
-                            << "      <strong>Error:</strong> Failed to write file " << files[i].filename << "<br>\r\n"
-                            << "    </li>\r\n";
-            }
-        } else {
-            // Failed to open file for writing
+        // Verify that the final path is still within the upload directory (security check)
+        if (!FileUtils::isPathWithinDirectory(savePath, uploadDir)) {
             responseBody << "    <li>\r\n"
-                        << "      <strong>Error:</strong> Failed to open file for writing: " << files[i].filename << "<br>\r\n"
+                        << "      <strong>Error:</strong> Security violation for file: " << originalFilename << "<br>\r\n"
                         << "    </li>\r\n";
+            continue;
+        }
+        
+        // ===== ACTUAL FILE STORAGE =====
+        
+        // Save the file
+        bool saveSuccess = false;
+        try {
+            std::ofstream fileStream(savePath.c_str(), std::ios::binary);
+            if (fileStream.is_open()) {
+                fileStream.write(files[i].content.c_str(), files[i].content.size());
+                saveSuccess = !fileStream.bad();
+                fileStream.close();
+                
+                // Set appropriate permissions (e.g., 0644)
+                chmod(savePath.c_str(), S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+            }
+        } catch (const std::exception& e) {
+            saveSuccess = false;
+            std::cerr << "Exception while saving file " << finalFilename << ": " << e.what() << std::endl;
+        }
+        
+        if (saveSuccess) {
+            successfulUploads++;
+            savedPaths.push_back(savePath);
+            
+            responseBody << "    <li>\r\n"
+                        << "      <strong>Field Name:</strong> " << files[i].name << "<br>\r\n"
+                        << "      <strong>Original Filename:</strong> " << originalFilename << "<br>\r\n"
+                        << "      <strong>Saved As:</strong> " << finalFilename << "<br>\r\n"
+                        << "      <strong>Content Type:</strong> " << files[i].contentType << "<br>\r\n"
+                        << "      <strong>Size:</strong> " << FileUtils::formatFileSize(files[i].content.size()) << "<br>\r\n"
+                        << "    </li>\r\n";
+        } else {
+            // Failed to write file
+            responseBody << "    <li>\r\n"
+                        << "      <strong>Error:</strong> Failed to save file " << originalFilename << "<br>\r\n"
+                        << "    </li>\r\n";
+            
+            // Clean up any partial file that might have been created
+            if (FileUtils::fileExists(savePath)) {
+                unlink(savePath.c_str());
+            }
         }
     }
     
     responseBody << "  </ul>\r\n";
     
     // Add form fields to response
-    responseBody << "  <h2>Form Fields:</h2>\r\n"
-                << "  <ul>\r\n";
-    
     const std::map<std::string, std::string>& fields = parser.getFields();
-    for (std::map<std::string, std::string>::const_iterator it = fields.begin(); it != fields.end(); ++it) {
-        responseBody << "    <li><strong>" << it->first << ":</strong> " << it->second << "</li>\r\n";
+    if (!fields.empty()) {
+        responseBody << "  <h2>Form Fields:</h2>\r\n"
+                    << "  <ul>\r\n";
+        
+        for (std::map<std::string, std::string>::const_iterator it = fields.begin(); it != fields.end(); ++it) {
+            responseBody << "    <li><strong>" << it->first << ":</strong> " << it->second << "</li>\r\n";
+        }
+        
+        responseBody << "  </ul>\r\n";
     }
-    
-    responseBody << "  </ul>\r\n";
     
     // Report summary
     responseBody << "  <p><strong>Upload Summary:</strong> " 
@@ -653,14 +681,119 @@ void Connection::_handleFileUpload(const LocationConfig& location)
     responseBody << "</body>\r\n"
                 << "</html>\r\n";
     
-    // Check if any files were uploaded successfully
+    // Set response status based on success
     if (successfulUploads > 0) {
         _response.setStatusCode(HTTP_STATUS_OK);
-    } else {
+    } else if (files.size() > 0) {
+        // Files were provided but none could be saved
         _response.setStatusCode(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+    } else {
+        // No files were provided (should not happen due to earlier check)
+        _response.setStatusCode(HTTP_STATUS_BAD_REQUEST);
     }
     
     _response.setBody(responseBody.str(), "text/html");
+    return (successfulUploads > 0);
+}
+
+// Helper method to sanitize filenames
+std::string Connection::_sanitizeFilename(const std::string& filename)
+{
+    // Remove any path components (directories)
+    std::string baseName = filename;
+    size_t lastSlash = baseName.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        baseName = baseName.substr(lastSlash + 1);
+    }
+    
+    // Replace potentially dangerous characters
+    std::string safeFilename;
+    for (size_t i = 0; i < baseName.length(); ++i) {
+        char c = baseName[i];
+        // Allow alphanumeric characters, dash, underscore, dot
+        if (isalnum(c) || c == '-' || c == '_' || c == '.') {
+            safeFilename += c;
+        } else {
+            // Replace other characters with underscore
+            safeFilename += '_';
+        }
+    }
+    
+    // Don't allow filenames starting with a dot (hidden files)
+    if (!safeFilename.empty() && safeFilename[0] == '.') {
+        safeFilename = "dot_" + safeFilename.substr(1);
+    }
+    
+    return safeFilename;
+}
+
+// Generate a unique filename to avoid overwriting existing files
+std::string Connection::_getUniqueFilename(const std::string& directory, const std::string& filename)
+{
+    // Check if file already exists
+    if (!FileUtils::fileExists(directory + filename)) {
+        return filename;
+    }
+    
+    // Extract base name and extension
+    std::string baseName = filename;
+    std::string extension = "";
+    
+    size_t dotPos = filename.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        baseName = filename.substr(0, dotPos);
+        extension = filename.substr(dotPos);
+    }
+    
+    // Try adding numbers to the filename until we find an unused name
+    int counter = 1;
+    std::string uniqueName;
+    
+    do {
+        std::stringstream ss;
+        ss << baseName << "_" << counter << extension;
+        uniqueName = ss.str();
+        counter++;
+    } while (FileUtils::fileExists(directory + uniqueName) && counter < 1000);
+    
+    // If we couldn't find a unique name after 1000 tries, use timestamp
+    if (counter >= 1000) {
+        std::stringstream ss;
+        ss << baseName << "_" << time(NULL) << extension;
+        uniqueName = ss.str();
+    }
+    
+    return uniqueName;
+}
+
+// Check if a file type is allowed (based on extension)
+bool Connection::_isAllowedFileType(const std::string& filename)
+{
+    // Get file extension
+    std::string extension = "";
+    size_t dotPos = filename.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        extension = filename.substr(dotPos + 1);
+        
+        // Convert to lowercase for case-insensitive comparison
+        for (size_t i = 0; i < extension.length(); ++i) {
+            extension[i] = tolower(extension[i]);
+        }
+    }
+    
+    // Example: Disallow potentially dangerous file types
+    // This is a basic example - you may want to customize this list
+    static const char* disallowedExtensions[] = {
+        "php", "cgi", "pl", "py", "sh", "exe", "bat", "cmd", "htaccess", NULL
+    };
+    
+    for (int i = 0; disallowedExtensions[i] != NULL; ++i) {
+        if (extension == disallowedExtensions[i]) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 void Connection::_handleDeleteRequest()
@@ -671,6 +804,7 @@ void Connection::_handleDeleteRequest()
     // Find the appropriate location for this path
     LocationConfig* location = _findLocation(requestPath);
     if (!location) {
+        std::cout << "DELETE: Location not found for path: " << requestPath << std::endl;
         _handleError(HTTP_STATUS_NOT_FOUND);
         return;
     }
@@ -687,6 +821,7 @@ void Connection::_handleDeleteRequest()
     }
     
     if (!deleteAllowed) {
+        std::cout << "DELETE: Method not allowed for path: " << requestPath << std::endl;
         _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
         return;
     }
@@ -694,29 +829,43 @@ void Connection::_handleDeleteRequest()
     // Resolve the path to a file system path
     std::string fsPath = FileUtils::resolvePath(requestPath, *location);
     
+    // ===== SECURITY CHECKS =====
+    
     // Check if the file exists
     if (!FileUtils::fileExists(fsPath)) {
+        std::cout << "DELETE: File not found: " << fsPath << std::endl;
         _handleError(HTTP_STATUS_NOT_FOUND);
         return;
     }
     
-    // Don't allow deleting directories
+    // Check if this is a directory
     if (FileUtils::isDirectory(fsPath)) {
+        std::cout << "DELETE: Cannot delete directory: " << fsPath << std::endl;
         _handleError(HTTP_STATUS_FORBIDDEN);
         return;
     }
     
     // Check if the file is outside the location's root directory (security check)
     std::string rootDir = location->getRoot();
-    if (fsPath.find(rootDir) != 0) {
+    if (!FileUtils::isPathWithinDirectory(fsPath, rootDir)) {
+        std::cout << "DELETE: Path outside root directory: " << fsPath << std::endl;
         _handleError(HTTP_STATUS_FORBIDDEN);
         return;
     }
     
+    // Check if we have permission to delete the file
+    if (!FileUtils::isWritable(fsPath)) {
+        std::cout << "DELETE: Permission denied: " << fsPath << std::endl;
+        _handleError(HTTP_STATUS_FORBIDDEN);
+        return;
+    }
+    
+    // ===== DELETE OPERATION =====
+    
     // Attempt to delete the file
     if (remove(fsPath.c_str()) != 0) {
         // Failed to delete the file
-        std::cerr << "Failed to delete file: " << fsPath << " - " << strerror(errno) << std::endl;
+        std::cout << "DELETE: Failed to delete file: " << fsPath << " - " << strerror(errno) << std::endl;
         
         // Different error responses based on the reason for failure
         if (errno == EACCES || errno == EPERM) {
@@ -729,13 +878,16 @@ void Connection::_handleDeleteRequest()
         return;
     }
     
-    // File deleted successfully, create a response
+    // File deleted successfully
+    std::cout << "DELETE: Successfully deleted file: " << fsPath << std::endl;
+    
+    // Create a simple success response
     std::string responseBody = "<html>\r\n"
                               "<head><title>Delete Successful</title></head>\r\n"
                               "<body>\r\n"
                               "  <h1>Delete Successful</h1>\r\n"
                               "  <p>The file has been successfully deleted.</p>\r\n"
-                              "  <p><strong>File:</strong> " + fsPath + "</p>\r\n"
+                              "  <p><strong>Path:</strong> " + requestPath + "</p>\r\n"
                               "</body>\r\n"
                               "</html>\r\n";
     

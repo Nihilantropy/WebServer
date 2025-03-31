@@ -179,4 +179,29 @@ private:
      * @return true if directory exists and is writable, false otherwise
      */
     bool _prepareUploadDirectory(const std::string& uploadDir);
+
+    /**
+     * @brief Sanitize a filename to make it safe for storage
+     * 
+     * @param filename Original filename from the upload
+     * @return std::string Sanitized filename
+     */
+    std::string _sanitizeFilename(const std::string& filename);
+    
+    /**
+     * @brief Generate a unique filename to avoid overwriting existing files
+     * 
+     * @param directory Directory where the file will be stored
+     * @param filename Sanitized filename
+     * @return std::string Unique filename
+     */
+    std::string _getUniqueFilename(const std::string& directory, const std::string& filename);
+     
+    /**
+     * @brief Check if a file type is allowed based on extension
+     * 
+     * @param filename Filename to check
+     * @return bool True if the file type is allowed
+     */
+    bool _isAllowedFileType(const std::string& filename);
 };
