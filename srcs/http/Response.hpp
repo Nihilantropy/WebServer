@@ -3,6 +3,7 @@
 #include <string>
 #include "Headers.hpp"
 #include "StatusCodes.hpp"
+#include "../utils/DebugLogger.hpp"
 
 /**
  * @brief Class to represent and generate an HTTP response

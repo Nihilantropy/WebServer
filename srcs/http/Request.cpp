@@ -35,6 +35,7 @@ bool Request::parse(std::string& buffer)
 bool Request::parseHeaders(std::string& buffer)
 {
     if (_headersParsed) {
+        DebugLogger::log("Headers already parsed");
         return true;
     }
     
@@ -42,6 +43,9 @@ bool Request::parseHeaders(std::string& buffer)
     size_t headerEnd = buffer.find("\r\n\r\n");
     if (headerEnd == std::string::npos) {
         // Not enough data yet
+        std::stringstream ss;
+        ss << buffer.size();
+        DebugLogger::log("End of headers not found yet, buffer size: " + ss.str());
         return false;
     }
     
@@ -49,12 +53,19 @@ bool Request::parseHeaders(std::string& buffer)
     std::string headers = buffer.substr(0, headerEnd + 4);
     buffer.erase(0, headerEnd + 4);
     
+    std::stringstream ss;
+    ss << headerEnd;
+    DebugLogger::log("Found end of headers at position " + ss.str());
+    DebugLogger::log("Headers raw data:");
+    DebugLogger::log(headers);
+    
     // Parse headers section
     std::istringstream stream(headers);
     std::string line;
     
     // Parse request line
     if (!std::getline(stream, line)) {
+        DebugLogger::logError("Failed to read request line from headers");
         return false;
     }
     
@@ -63,7 +74,10 @@ bool Request::parseHeaders(std::string& buffer)
         line.erase(line.length() - 1);
     }
     
+    DebugLogger::log("Request line: " + line);
+    
     if (!_parseRequestLine(line)) {
+        DebugLogger::logError("Failed to parse request line: " + line);
         return false;
     }
     
@@ -72,6 +86,7 @@ bool Request::parseHeaders(std::string& buffer)
     while (std::getline(stream, line)) {
         // Skip the empty line after headers
         if (line == "\r" || line.empty()) {
+            DebugLogger::log("Found empty line, end of headers");
             break;
         }
         
@@ -80,18 +95,36 @@ bool Request::parseHeaders(std::string& buffer)
             line.erase(line.length() - 1);
         }
         
+        DebugLogger::log("Header line: " + line);
         headerBlock += line + "\n";
     }
     
     if (!_headers.parse(headerBlock)) {
+        DebugLogger::logError("Failed to parse headers block");
         return false;
     }
     
+    // If we got here, headers parsed successfully
     _headersParsed = true;
     
+    // Dump parsed headers
+    DebugLogger::log("Parsed headers:");
+    const std::map<std::string, std::string>& headerMap = _headers.getAll();
+    for (std::map<std::string, std::string>::const_iterator it = headerMap.begin(); 
+         it != headerMap.end(); ++it) {
+        DebugLogger::log(it->first + ": " + it->second);
+    }
+    
     // If no body expected, request is complete
-    if (_method == GET || _headers.getContentLength() == 0) {
+    if (_method == GET || (_headers.getContentLength() == 0 && !_headers.hasChunkedEncoding())) {
+        DebugLogger::log("No body expected, request is complete");
         _complete = true;
+    } else if (_headers.hasChunkedEncoding()) {
+        DebugLogger::log("Request uses chunked encoding");
+    } else {
+        std::stringstream lenStr;
+        lenStr << _headers.getContentLength();
+        DebugLogger::log("Body expected, Content-Length: " + lenStr.str());
     }
     
     return true;
@@ -100,15 +133,18 @@ bool Request::parseHeaders(std::string& buffer)
 bool Request::parseBody(std::string& buffer)
 {
     if (!_headersParsed) {
+        DebugLogger::logError("Cannot parse body before headers");
         return false;
     }
     
     if (_complete) {
+        DebugLogger::log("Request already complete");
         return true;
     }
     
     // Handle chunked encoding
     if (_headers.hasChunkedEncoding()) {
+        DebugLogger::log("Processing chunked body");
         return _parseChunkedBody(buffer);
     }
     
@@ -119,6 +155,13 @@ bool Request::parseBody(std::string& buffer)
         size_t remainingBytes = contentLength - _bodyBytesRead;
         size_t bytesToRead = buffer.size() < remainingBytes ? buffer.size() : remainingBytes;
         
+        std::stringstream ss;
+        ss << contentLength << ", Read so far: " << _bodyBytesRead 
+           << ", Remaining: " << remainingBytes
+           << ", Available: " << buffer.size()
+           << ", Will read: " << bytesToRead;
+        DebugLogger::log("Content-Length: " + ss.str());
+        
         // Append to body
         _body.append(buffer, 0, bytesToRead);
         _bodyBytesRead += bytesToRead;
@@ -128,10 +171,18 @@ bool Request::parseBody(std::string& buffer)
         
         // Check if body is complete
         if (_bodyBytesRead >= contentLength) {
+            std::stringstream sizeStr;
+            sizeStr << _body.size();
+            DebugLogger::log("Body complete, total size: " + sizeStr.str());
             _complete = true;
+        } else {
+            std::stringstream remainStr;
+            remainStr << (contentLength - _bodyBytesRead);
+            DebugLogger::log("Body not complete, need " + remainStr.str() + " more bytes");
         }
     } else {
         // No body expected
+        DebugLogger::log("No body expected (Content-Length is 0)");
         _complete = true;
     }
     
@@ -140,6 +191,14 @@ bool Request::parseBody(std::string& buffer)
 
 bool Request::_parseChunkedBody(std::string& buffer)
 {
+    std::stringstream ss;
+    ss << buffer.size();
+    DebugLogger::log("Parsing chunked body, buffer size: " + ss.str());
+    
+    // Dump the first 100 bytes of the buffer for debugging
+    size_t dumpSize = buffer.size() < 100 ? buffer.size() : 100;
+    DebugLogger::hexDump("Chunk buffer", buffer.substr(0, dumpSize));
+    
     // Chunked encoding format:
     // [chunk size in hex]\r\n
     // [chunk data]\r\n
@@ -149,9 +208,26 @@ bool Request::_parseChunkedBody(std::string& buffer)
     
     while (!buffer.empty()) {
         // Check if we're at the end of the chunked data
-        if (_bodyBytesRead > 0 && buffer.find("0\r\n\r\n") == 0) {
-            buffer.erase(0, 5); // Remove the end marker
+        if (buffer.find("0\r\n\r\n") == 0 || buffer.find("0\r\n") == 0) {
+            DebugLogger::log("Found end chunk marker");
+            
+            // Check for the terminating sequence
+            if (buffer.find("0\r\n\r\n") == 0) {
+                buffer.erase(0, 5); // Remove "0\r\n\r\n"
+            } else if (buffer.find("0\r\n") == 0) {
+                buffer.erase(0, 3); // Remove "0\r\n"
+                
+                // Check if there's another \r\n after this
+                if (buffer.find("\r\n") == 0) {
+                    buffer.erase(0, 2); // Remove additional "\r\n"
+                }
+            }
+            
             _complete = true;
+            
+            std::stringstream sizeStr;
+            sizeStr << _body.size();
+            DebugLogger::log("Chunked body complete, total size: " + sizeStr.str());
             return true;
         }
         
@@ -159,26 +235,53 @@ bool Request::_parseChunkedBody(std::string& buffer)
         size_t crlfPos = buffer.find("\r\n");
         if (crlfPos == std::string::npos) {
             // Not enough data to read chunk size
+            DebugLogger::log("Chunk size line not complete yet");
             return false;
         }
         
         // Parse chunk size
         std::string hexSize = buffer.substr(0, crlfPos);
-        buffer.erase(0, crlfPos + 2); // Remove size line and CRLF
+        DebugLogger::log("Chunk size (hex): " + hexSize);
+        
+        // Skip any chunk extensions
+        size_t semicolonPos = hexSize.find(';');
+        if (semicolonPos != std::string::npos) {
+            hexSize = hexSize.substr(0, semicolonPos);
+            DebugLogger::log("Trimmed chunk size (hex): " + hexSize);
+        }
         
         // Convert hex to decimal
         unsigned long chunkSize = 0;
         std::istringstream iss(hexSize);
         iss >> std::hex >> chunkSize;
         
+        if (!iss) {
+            // Invalid hex format
+            DebugLogger::logError("Invalid chunk size format: " + hexSize);
+            return false;
+        }
+        
+        std::stringstream chunkSizeStr;
+        chunkSizeStr << chunkSize;
+        DebugLogger::log("Chunk size (decimal): " + chunkSizeStr.str());
+        
+        // Remove size line and CRLF from buffer
+        buffer.erase(0, crlfPos + 2);
+        
         if (chunkSize == 0) {
             // Last chunk
             if (buffer.find("\r\n") == 0) {
                 buffer.erase(0, 2); // Remove final CRLF
                 _complete = true;
+                
+                std::stringstream bodySizeStr;
+                bodySizeStr << _body.size();
+                DebugLogger::log("Chunked body complete (zero-size chunk), total size: " + 
+                             bodySizeStr.str());
                 return true;
             } else {
                 // Not enough data to finish
+                DebugLogger::log("Waiting for final CRLF after zero-size chunk");
                 return false;
             }
         }
@@ -186,6 +289,9 @@ bool Request::_parseChunkedBody(std::string& buffer)
         // Check if we have the full chunk data plus CRLF
         if (buffer.size() < chunkSize + 2) {
             // Not enough data
+            std::stringstream ss;
+            ss << buffer.size() << " bytes, need " << (chunkSize + 2) << " bytes";
+            DebugLogger::log("Not enough data for complete chunk, have " + ss.str());
             return false;
         }
         
@@ -193,10 +299,22 @@ bool Request::_parseChunkedBody(std::string& buffer)
         _body.append(buffer, 0, chunkSize);
         _bodyBytesRead += chunkSize;
         
+        // Check if the chunk is properly terminated with CRLF
+        if (buffer.substr(chunkSize, 2) != "\r\n") {
+            DebugLogger::logError("Chunk not terminated with CRLF");
+            DebugLogger::hexDump("Chunk termination", buffer.substr(chunkSize, 4));
+            return false;
+        }
+        
         // Remove chunk data and CRLF from buffer
         buffer.erase(0, chunkSize + 2);
+        
+        std::stringstream processedStr;
+        processedStr << chunkSize << " bytes, remaining buffer size: " << buffer.size();
+        DebugLogger::log("Processed chunk of " + processedStr.str());
     }
     
+    DebugLogger::log("Need more data for chunked body");
     return false; // Need more data
 }
 
@@ -209,12 +327,16 @@ bool Request::_parseRequestLine(const std::string& line)
     
     // Check if all three parts were read
     if (methodStr.empty() || uri.empty() || version.empty()) {
+        DebugLogger::logError("Invalid request line format, missing components");
         return false;
     }
+    
+    DebugLogger::log("Method: " + methodStr + ", URI: " + uri + ", Version: " + version);
     
     // Parse method
     _method = parseMethod(methodStr);
     if (_method == UNKNOWN) {
+        DebugLogger::logError("Unknown HTTP method: " + methodStr);
         return false;
     }
     
@@ -226,14 +348,17 @@ bool Request::_parseRequestLine(const std::string& line)
     if (queryPos != std::string::npos) {
         _path = uri.substr(0, queryPos);
         _queryString = uri.substr(queryPos + 1);
+        DebugLogger::log("Path: " + _path + ", Query string: " + _queryString);
         _parseQueryParams();
     } else {
         _path = uri;
         _queryString = "";
+        DebugLogger::log("Path: " + _path + " (no query string)");
     }
     
     // Check HTTP version
     if (version != "HTTP/1.0" && version != "HTTP/1.1") {
+        DebugLogger::logError("Unsupported HTTP version: " + version);
         return false;
     }
     

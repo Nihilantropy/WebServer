@@ -3,6 +3,8 @@
 #include <string>
 #include <map>
 #include "Headers.hpp"
+#include "../utils/StringUtils.hpp"
+#include "../utils/DebugLogger.hpp"
 
 /**
  * @brief Class to represent and parse an HTTP request

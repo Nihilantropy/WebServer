@@ -2,6 +2,7 @@
 #include "tests/ConfigTests.hpp"
 #include "tests/WebServerTests.hpp"
 #include "server/Server.hpp"
+#include "utils/DebugLogger.hpp"
 #include <iostream>
 #include <string>
 #include <csignal>
@@ -25,6 +26,7 @@ void printUsage(const char* programName) {
     std::cout << "  --fulltest, -f          Run comprehensive test suite" << std::endl;
     std::cout << "  --help, -h              Show this help message" << std::endl;
     std::cout << "  --config, -c <file>     Specify configuration file (default: config/webserv.conf)" << std::endl;
+    std::cout << "  --debug, -d             Enable debug logging" << std::endl;
 }
 
 int main(int argc, char **argv) {
@@ -32,6 +34,7 @@ int main(int argc, char **argv) {
     std::string confFile = "config/webserv.conf";
     bool runConfigTests = false;
     bool runFullTests = false;
+    bool debugMode = false;
     
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
@@ -44,6 +47,10 @@ int main(int argc, char **argv) {
         } else if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             return 0;
+        } else if (arg == "--debug" || arg == "-d") {
+            debugMode = true;
+            DebugLogger::enable();
+            std::cout << "Debug logging enabled" << std::endl;
         } else if (arg == "--config" || arg == "-c") {
             if (i + 1 < argc) {
                 confFile = argv[++i];
@@ -68,6 +75,9 @@ int main(int argc, char **argv) {
     // Run full test suite if requested
     if (runFullTests) {
         std::cout << "Running comprehensive test suite..." << std::endl;
+        if (debugMode) {
+            std::cout << "Note: Debug mode enabled for tests" << std::endl;
+        }
         WebServerTests::runAllTests();
         return 0;
     }
@@ -90,6 +100,11 @@ int main(int argc, char **argv) {
         // Initialize and run the server
         server.initialize();
         std::cout << "Server initialization complete. Starting main loop." << std::endl;
+        
+        if (debugMode) {
+            std::cout << "Debug mode enabled. Server will produce detailed logs." << std::endl;
+        }
+        
         server.run();
         
     } catch (const std::exception& e) {

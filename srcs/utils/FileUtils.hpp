@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <limits.h>
 #include "../config/parser/LocationConfig.hpp"
+#include "DebugLogger.hpp"
 
 /**
  * @brief Class containing file operation utilities

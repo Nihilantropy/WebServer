@@ -53,6 +53,10 @@ Headers& Response::getHeaders()
 
 std::string Response::build()
 {
+    std::stringstream statusStr;
+    statusStr << _statusCode;
+    DebugLogger::log("Building response with status code: " + statusStr.str());
+    
     std::stringstream ss;
     
     // Status line
@@ -61,10 +65,15 @@ std::string Response::build()
     // Make sure Content-Length is set if we have a body
     if (!_body.empty() && !_headers.contains("content-length")) {
         setContentLength(_body.size());
+        
+        std::stringstream lenStr;
+        lenStr << _body.size();
+        DebugLogger::log("Added Content-Length: " + lenStr.str());
     }
     
     // Headers
     ss << _headers.toString();
+    DebugLogger::log("Added response headers");
     
     // Empty line
     ss << "\r\n";
@@ -72,9 +81,19 @@ std::string Response::build()
     // Body
     if (!_body.empty()) {
         ss << _body;
+        
+        std::stringstream sizeStr;
+        sizeStr << _body.size();
+        DebugLogger::log("Added response body, size: " + sizeStr.str());
     }
     
-    return ss.str();
+    std::string result = ss.str();
+    
+    std::stringstream resultSizeStr;
+    resultSizeStr << result.size();
+    DebugLogger::log("Complete response size: " + resultSizeStr.str());
+    
+    return result;
 }
 
 void Response::redirect(const std::string& location, int code)

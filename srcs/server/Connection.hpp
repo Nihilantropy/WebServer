@@ -10,6 +10,7 @@
 #include "../http/Response.hpp"
 #include "../utils/FileUtils.hpp"
 #include "../http/MultipartParser.hpp"
+#include "../utils/DebugLogger.hpp"
 
 /**
  * @brief Class to manage an individual client connection

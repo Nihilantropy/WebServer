@@ -38,11 +38,15 @@ void Connection::_updateLastActivity()
 bool Connection::readData()
 {
     if (_state == CLOSED) {
+        DebugLogger::log("Connection is closed, not reading");
         return false;
     }
     
     // Make sure we only read when we should
     if (_state != READING_HEADERS && _state != READING_BODY) {
+        std::stringstream ss;
+        ss << _state;
+        DebugLogger::log("Connection state doesn't allow reading: " + ss.str());
         return true;
     }
     
@@ -54,29 +58,61 @@ bool Connection::readData()
     
     if (bytesRead > 0) {
         // Append read data to input buffer
-        _inputBuffer.append(buffer, bytesRead);
+        std::string newData(buffer, bytesRead);
+        _inputBuffer.append(newData);
         _updateLastActivity();
         
         std::cout << "Read " << bytesRead << " bytes from " << _clientIp << std::endl;
+        DebugLogger::hexDump("Raw request data", newData);
         
         // Process data based on current state
         if (_state == READING_HEADERS) {
+            DebugLogger::log("Parsing headers...");
             if (_request.parseHeaders(_inputBuffer)) {
+                DebugLogger::log("Headers parsed successfully");
+                DebugLogger::logRequest(_clientIp, _request.getMethodStr(), 
+                                     _request.getPath(), _request.getHeaders().toString());
+                
                 // Headers complete, check if we need to read the body
                 if (_request.isComplete()) {
                     // No body expected, move to processing
+                    DebugLogger::log("Request is complete (no body required), moving to PROCESSING state");
                     _state = PROCESSING;
                     process();
                 } else {
                     // Body expected, move to reading body
+                    DebugLogger::log("Body expected, moving to READING_BODY state");
+                    
+                    std::stringstream ss;
+                    ss << _request.getHeaders().getContentLength();
+                    DebugLogger::log("Content-Length: " + ss.str());
+                    
                     _state = READING_BODY;
                 }
+            } else {
+                DebugLogger::log("Headers not complete yet, continuing to read");
             }
         } else if (_state == READING_BODY) {
+            DebugLogger::log("Parsing body...");
+            
+            std::stringstream ss;
+            ss << _inputBuffer.size();
+            DebugLogger::log("Body buffer size: " + ss.str());
+            
             if (_request.parseBody(_inputBuffer)) {
                 // Body complete, move to processing
+                DebugLogger::log("Body parsed successfully, moving to PROCESSING state");
+                
+                std::stringstream bodySizeStr;
+                bodySizeStr << _request.getBody().size();
+                DebugLogger::log("Body size: " + bodySizeStr.str());
+                
                 _state = PROCESSING;
                 process();
+            } else {
+                DebugLogger::log("Body not complete yet, continuing to read");
+                DebugLogger::log("Current body content: " + _request.getBody().substr(0, 100) + 
+                             (_request.getBody().size() > 100 ? "..." : ""));
             }
         }
         
@@ -90,10 +126,12 @@ bool Connection::readData()
         // Error or would block
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             // No data available, try again later
+            DebugLogger::log("No data available (EAGAIN/EWOULDBLOCK)");
             return true;
         } else {
             // Error
             std::cerr << "Error reading from socket " << _clientFd << ": " << strerror(errno) << std::endl;
+            DebugLogger::logError("Socket read error: " + std::string(strerror(errno)));
             _state = CLOSED;
             return false;
         }
@@ -103,13 +141,24 @@ bool Connection::readData()
 bool Connection::writeData()
 {
     if (_state == CLOSED) {
+        DebugLogger::log("Connection is closed, not writing");
         return false;
     }
     
     // Make sure we only write when we should
     if (_state != SENDING_RESPONSE || _outputBuffer.empty()) {
+        std::stringstream ss;
+        ss << _state;
+        std::stringstream ss2;
+        ss2 << _outputBuffer.size();
+        DebugLogger::log("Not in writing state or buffer empty, state: " + ss.str() + 
+                      ", buffer size: " + ss2.str());
         return true;
     }
+    
+    std::stringstream ss;
+    ss << _outputBuffer.size();
+    DebugLogger::log("Writing response data, buffer size: " + ss.str());
     
     ssize_t bytesWritten = send(_clientFd, _outputBuffer.c_str(), _outputBuffer.size(), 0);
     
@@ -118,24 +167,36 @@ bool Connection::writeData()
         
         std::cout << "Wrote " << bytesWritten << " bytes to " << _clientIp << std::endl;
         
+        std::stringstream bwStr;
+        bwStr << bytesWritten;
+        DebugLogger::log("Wrote " + bwStr.str() + " bytes to client");
+        
         // Remove sent data from buffer
         _outputBuffer.erase(0, bytesWritten);
+        
+        std::stringstream remStr;
+        remStr << _outputBuffer.size();
+        DebugLogger::log("Remaining output buffer size: " + remStr.str());
         
         // If all data sent, move to next state
         if (_outputBuffer.empty()) {
             // Mark the response as sent
             _response.markAsSent();
+            DebugLogger::log("Response fully sent");
             
             // Check connection header
             bool keepAlive = _request.getHeaders().keepAlive(true);
+            DebugLogger::log("Keep-alive: " + std::string(keepAlive ? "yes" : "no"));
             
             if (keepAlive) {
                 // Reset for the next request
+                DebugLogger::log("Keeping connection alive, resetting for next request");
                 _request.reset();
                 _state = READING_HEADERS;
                 _inputBuffer.clear();
             } else {
                 // Close connection after response
+                DebugLogger::log("Not keep-alive, closing connection");
                 _state = CLOSED;
             }
         }
@@ -144,16 +205,19 @@ bool Connection::writeData()
     } else if (bytesWritten == 0) {
         // Socket closed
         std::cout << "Connection closed during write: " << _clientIp << std::endl;
+        DebugLogger::logError("Connection closed by client during write");
         _state = CLOSED;
         return false;
     } else {
         // Error or would block
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             // Socket buffer full, try again later
+            DebugLogger::log("Write would block (EAGAIN/EWOULDBLOCK), trying again later");
             return true;
         } else {
             // Error
             std::cerr << "Error writing to socket " << _clientFd << ": " << strerror(errno) << std::endl;
+            DebugLogger::logError("Socket write error: " + std::string(strerror(errno)));
             _state = CLOSED;
             return false;
         }
@@ -163,6 +227,9 @@ bool Connection::writeData()
 void Connection::process()
 {
     if (_state != PROCESSING) {
+        std::stringstream ss;
+        ss << _state;
+        DebugLogger::log("process() called but state is not PROCESSING, current state: " + ss.str());
         return;
     }
     
@@ -178,11 +245,19 @@ void Connection::process()
     } catch (const std::exception& e) {
         // Handle any exceptions during processing
         std::cerr << "Error processing request: " << e.what() << std::endl;
+        DebugLogger::logError("Exception during request processing: " + std::string(e.what()));
         _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
     }
     
     // Build the response and store in output buffer
     _outputBuffer = _response.build();
+    
+    // Log the response
+    DebugLogger::logResponse(_response.getStatusCode(), _response.getHeaders().toString());
+    
+    std::stringstream ss;
+    ss << _response.getBody().size();
+    DebugLogger::log("Response body length: " + ss.str());
     
     // Move to sending response state
     _state = SENDING_RESPONSE;
@@ -190,80 +265,130 @@ void Connection::process()
 
 void Connection::_processRequest()
 {
+    DebugLogger::log("Processing request: " + _request.getMethodStr() + " " + _request.getPath());
+    
     // Check if method is supported
     Request::Method method = _request.getMethod();
     if (method == Request::UNKNOWN) {
+        DebugLogger::logError("Unknown HTTP method");
         _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
         return;
     }
+    
+    // Find the appropriate location for this path
+    LocationConfig* location = _findLocation(_request.getPath());
+    if (!location) {
+        DebugLogger::logError("No location block found for path: " + _request.getPath());
+        _handleError(HTTP_STATUS_NOT_FOUND);
+        return;
+    }
+    
+    DebugLogger::log("Found location block: " + location->getPath() + 
+                  " with root: " + location->getRoot());
     
     // Check if the requested method is allowed for this location
     std::string methodStr = _request.getMethodStr();
     bool methodAllowed = false;
     
-    // TODO: Implement proper route matching based on _serverConfig->getLocations()
-    // For now, just check if the method is allowed in the first location
-    if (!_serverConfig->getLocations().empty()) {
-        const std::vector<std::string>& allowedMethods = _serverConfig->getLocations().front()->getAllowedMethods();
-        for (std::vector<std::string>::const_iterator it = allowedMethods.begin(); it != allowedMethods.end(); ++it) {
-            if (*it == methodStr) {
-                methodAllowed = true;
-                break;
-            }
+    const std::vector<std::string>& allowedMethods = location->getAllowedMethods();
+    DebugLogger::log("Allowed methods for this location:");
+    for (std::vector<std::string>::const_iterator it = allowedMethods.begin(); 
+         it != allowedMethods.end(); ++it) {
+        DebugLogger::log(" - " + *it);
+        if (*it == methodStr) {
+            methodAllowed = true;
         }
     }
     
     if (!methodAllowed) {
+        DebugLogger::logError("Method " + methodStr + " not allowed for this location");
         _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
+        return;
+    }
+    
+    // Check if this is a redirection
+    if (!location->getRedirection().empty()) {
+        DebugLogger::log("This location has a redirection: " + location->getRedirection());
+        _handleRedirection(*location);
         return;
     }
     
     // Handle the request based on method
     if (method == Request::GET) {
+        DebugLogger::log("Handling GET request");
         _handleStaticFile();
     } else if (method == Request::POST) {
+        DebugLogger::log("Handling POST request");
         _handlePostRequest();
     } else if (method == Request::DELETE) {
+        DebugLogger::log("Handling DELETE request");
         _handleDeleteRequest();
     } else {
+        DebugLogger::logError("Method implementation missing for " + methodStr);
         _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
     }
 }
 
 void Connection::_handleStaticFile()
 {
+    DebugLogger::log("Handling static file for path: " + _request.getPath());
+    
     // Get the request path
     std::string requestPath = _request.getPath();
     
     // Find the appropriate location for this path
     LocationConfig* location = _findLocation(requestPath);
     if (!location) {
+        DebugLogger::logError("No location block found for path: " + requestPath);
         _handleError(HTTP_STATUS_NOT_FOUND);
-        return;
-    }
-    
-    // Check if this is a redirection
-    if (!location->getRedirection().empty()) {
-        _handleRedirection(*location);
         return;
     }
     
     // Resolve the path to a file system path
     std::string fsPath = FileUtils::resolvePath(requestPath, *location);
+    DebugLogger::log("Resolved filesystem path: " + fsPath);
     
     // Check if the path exists
     if (!FileUtils::fileExists(fsPath)) {
+        DebugLogger::logError("File not found: " + fsPath);
+        
+        // Special handling for root path with index
+        if (requestPath == "/" || requestPath == "") {
+            std::string indexFile = location->getIndex();
+            if (!indexFile.empty()) {
+                std::string indexPath = fsPath;
+                if (indexPath[indexPath.length() - 1] != '/') {
+                    indexPath += '/';
+                }
+                indexPath += indexFile;
+                
+                DebugLogger::log("Trying index file: " + indexPath);
+                
+                if (FileUtils::fileExists(indexPath)) {
+                    DebugLogger::log("Index file exists, serving: " + indexPath);
+                    _serveFile(indexPath);
+                    return;
+                } else {
+                    DebugLogger::logError("Index file not found: " + indexPath);
+                }
+            } else {
+                DebugLogger::log("No index file configured for this location");
+            }
+        }
+        
         _handleError(HTTP_STATUS_NOT_FOUND);
         return;
     }
     
     // Handle directory
     if (FileUtils::isDirectory(fsPath)) {
+        DebugLogger::log("Path is a directory: " + fsPath);
         _handleDirectory(fsPath, requestPath, *location);
         return;
     }
     
     // Handle regular file
+    DebugLogger::log("Serving regular file: " + fsPath);
     _serveFile(fsPath);
 }
 
@@ -291,11 +416,15 @@ void Connection::_handleDefault()
 
 LocationConfig* Connection::_findLocation(const std::string& requestPath)
 {
+    DebugLogger::log("Finding location for path: " + requestPath);
+    
     const std::vector<LocationConfig*>& locations = _serverConfig->getLocations();
     
     // First, try to find an exact match
-    for (std::vector<LocationConfig*>::const_iterator it = locations.begin(); it != locations.end(); ++it) {
+    for (std::vector<LocationConfig*>::const_iterator it = locations.begin(); 
+         it != locations.end(); ++it) {
         if ((*it)->getPath() == requestPath) {
+            DebugLogger::log("Found exact match location: " + (*it)->getPath());
             return *it;
         }
     }
@@ -304,17 +433,37 @@ LocationConfig* Connection::_findLocation(const std::string& requestPath)
     LocationConfig* bestMatch = NULL;
     size_t bestMatchLength = 0;
     
-    for (std::vector<LocationConfig*>::const_iterator it = locations.begin(); it != locations.end(); ++it) {
+    for (std::vector<LocationConfig*>::const_iterator it = locations.begin(); 
+         it != locations.end(); ++it) {
         const std::string& locationPath = (*it)->getPath();
+        
+        DebugLogger::log("Checking location: " + locationPath);
         
         // Check if location path is a prefix of the request path
         if (requestPath.find(locationPath) == 0) {
-            // Check if this location is a better match than the current best
-            if (locationPath.length() > bestMatchLength) {
-                bestMatch = *it;
-                bestMatchLength = locationPath.length();
+            // Make sure it's a complete path segment match
+            if (locationPath == "/" || 
+                requestPath.length() == locationPath.length() || 
+                requestPath[locationPath.length()] == '/') {
+                
+                // Check if this location is a better match than the current best
+                if (locationPath.length() > bestMatchLength) {
+                    bestMatch = *it;
+                    bestMatchLength = locationPath.length();
+                    
+                    std::stringstream ss;
+                    ss << bestMatchLength;
+                    DebugLogger::log("New best match: " + locationPath + 
+                                  " (length: " + ss.str() + ")");
+                }
             }
         }
+    }
+    
+    if (bestMatch) {
+        DebugLogger::log("Found best match location: " + bestMatch->getPath());
+    } else {
+        DebugLogger::logError("No matching location found for " + requestPath);
     }
     
     return bestMatch;
@@ -339,12 +488,16 @@ void Connection::_handleRedirection(const LocationConfig& location)
 
 void Connection::_handleDirectory(const std::string& fsPath, const std::string& requestPath, const LocationConfig& location)
 {
+    DebugLogger::log("Handling directory: " + fsPath + " for request path: " + requestPath);
+    
     // Check if the request path ends with a slash
     bool endsWithSlash = requestPath[requestPath.length() - 1] == '/';
+    DebugLogger::log("Path ends with slash: " + std::string(endsWithSlash ? "yes" : "no"));
     
     // If the path doesn't end with a slash, redirect to add the slash
     if (!endsWithSlash) {
         std::string redirectUrl = requestPath + "/";
+        DebugLogger::log("Redirecting to add trailing slash: " + redirectUrl);
         _response.redirect(redirectUrl, HTTP_STATUS_MOVED_PERMANENTLY);
         return;
     }
@@ -353,48 +506,67 @@ void Connection::_handleDirectory(const std::string& fsPath, const std::string& 
     std::string indexFile = location.getIndex();
     if (!indexFile.empty()) {
         std::string indexPath = fsPath + "/" + indexFile;
+        DebugLogger::log("Checking for index file: " + indexPath);
+        
         if (FileUtils::fileExists(indexPath)) {
+            DebugLogger::log("Index file exists, serving: " + indexPath);
             _serveFile(indexPath);
             return;
+        } else {
+            DebugLogger::logError("Index file not found: " + indexPath);
         }
     }
     
     // If no index file or autoindex is off, return 403 Forbidden
     if (!location.getAutoIndex()) {
+        DebugLogger::logError("No index file and autoindex is off, returning 403 Forbidden");
         _handleError(HTTP_STATUS_FORBIDDEN);
         return;
     }
     
     // Generate directory listing
+    DebugLogger::log("Generating directory listing for: " + fsPath);
     std::string listing = FileUtils::generateDirectoryListing(fsPath, requestPath);
     if (listing.empty()) {
+        DebugLogger::logError("Failed to generate directory listing");
         _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
         return;
     }
     
     // Send directory listing
+    DebugLogger::log("Serving directory listing");
     _response.setStatusCode(HTTP_STATUS_OK);
     _response.setBody(listing, "text/html");
 }
 
 void Connection::_serveFile(const std::string& fsPath)
 {
+    DebugLogger::log("Serving file: " + fsPath);
+    
     // Get the file contents
     std::string contents = FileUtils::getFileContents(fsPath);
     if (contents.empty()) {
+        DebugLogger::logError("Failed to read file contents: " + fsPath);
         _handleError(HTTP_STATUS_NOT_FOUND);
         return;
     }
+    
+    std::stringstream ss;
+    ss << contents.size();
+    DebugLogger::log("Read file contents, size: " + ss.str());
     
     // Get the file extension and MIME type
     std::string extension = FileUtils::getFileExtension(fsPath);
     std::string mimeType = FileUtils::getMimeType(extension);
     
+    DebugLogger::log("File extension: " + extension + ", MIME type: " + mimeType);
+    
     // Check if this is a CGI file
     LocationConfig* location = _findLocation(_request.getPath());
     if (location) {
         const std::vector<std::string>& cgiExtensions = location->getCgiExtentions();
-        for (std::vector<std::string>::const_iterator it = cgiExtensions.begin(); it != cgiExtensions.end(); ++it) {
+        for (std::vector<std::string>::const_iterator it = cgiExtensions.begin(); 
+             it != cgiExtensions.end(); ++it) {
             // Check if extension matches (with or without leading dot)
             std::string cgiExt = *it;
             if (cgiExt[0] == '.') {
@@ -402,6 +574,7 @@ void Connection::_serveFile(const std::string& fsPath)
             }
             
             if (extension == cgiExt) {
+                DebugLogger::log("File is a CGI script, extension: " + extension);
                 _handleCgi(fsPath, *location);
                 return;
             }
@@ -409,6 +582,7 @@ void Connection::_serveFile(const std::string& fsPath)
     }
     
     // Set the response
+    DebugLogger::log("Setting response with file contents");
     _response.setStatusCode(HTTP_STATUS_OK);
     _response.setBody(contents, mimeType);
 }
@@ -897,16 +1071,28 @@ void Connection::_handleDeleteRequest()
 
 void Connection::_handleError(int statusCode)
 {
+    std::stringstream ss;
+    ss << statusCode;
+    DebugLogger::log("Handling error, status code: " + ss.str());
+    
     // Get error page content
     std::string errorContent = _getErrorPage(statusCode);
     
     // Set response with error status and content
     _response.setStatusCode(statusCode);
     _response.setBody(errorContent, "text/html");
+    
+    std::stringstream sizeStr;
+    sizeStr << errorContent.size();
+    DebugLogger::log("Error page set, content size: " + sizeStr.str());
 }
 
 std::string Connection::_getErrorPage(int statusCode)
 {
+    std::stringstream ss;
+    ss << statusCode;
+    DebugLogger::log("Getting error page for status code: " + ss.str());
+    
     // Check if there is a custom error page configured
     std::map<int, std::string> errorPages = _serverConfig->getErrorPages();
     std::map<int, std::string>::const_iterator it = errorPages.find(statusCode);
@@ -914,18 +1100,41 @@ std::string Connection::_getErrorPage(int statusCode)
     if (it != errorPages.end()) {
         // Custom error page configured, try to read it
         std::string path = it->second;
+        DebugLogger::log("Custom error page found: " + path);
         
-        // TODO: Implement proper file reading based on server root
-        // For now, just try to read directly
-        std::ifstream file(path.c_str());
-        if (file.is_open()) {
-            std::stringstream buffer;
-            buffer << file.rdbuf();
-            return buffer.str();
+        // Check if the path starts with a slash, if so, it's relative to server root
+        if (!path.empty() && path[0] == '/') {
+            // Find a suitable location to resolve the path
+            LocationConfig* location = _findLocation("/");
+            if (location) {
+                // Remove leading slash
+                std::string relativePath = path.substr(1);
+                std::string root = location->getRoot();
+                if (root[root.length() - 1] != '/') {
+                    root += '/';
+                }
+                
+                // Construct full path
+                path = root + relativePath;
+                DebugLogger::log("Resolved error page path: " + path);
+            }
+        }
+        
+        // Try to read the file
+        if (FileUtils::fileExists(path)) {
+            DebugLogger::log("Reading custom error page: " + path);
+            std::string content = FileUtils::getFileContents(path);
+            if (!content.empty()) {
+                return content;
+            }
+            DebugLogger::logError("Failed to read custom error page: " + path);
+        } else {
+            DebugLogger::logError("Custom error page not found: " + path);
         }
     }
     
     // Default error page
+    DebugLogger::log("Using default error page");
     std::stringstream errorContent;
     errorContent << "<html>\r\n"
                  << "<head><title>Error " << statusCode << "</title></head>\r\n"

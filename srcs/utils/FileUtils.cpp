@@ -264,21 +264,34 @@ std::string FileUtils::generateDirectoryListing(const std::string& dirPath, cons
 
 std::string FileUtils::resolvePath(const std::string& uriPath, const LocationConfig& location)
 {
+    DebugLogger::log("Resolving URI path: " + uriPath + 
+                  " for location path: " + location.getPath() + 
+                  " with root: " + location.getRoot());
+    
     std::string locationPath = location.getPath();
     std::string root = location.getRoot();
     
-    // Ensure location path ends with a slash
-    if (!locationPath.empty() && locationPath[locationPath.length() - 1] != '/') {
+    // Ensure location path ends with a slash if it's not "/"
+    if (locationPath != "/" && locationPath[locationPath.length() - 1] != '/') {
         locationPath += '/';
+        DebugLogger::log("Added trailing slash to location path: " + locationPath);
     }
     
     // Ensure root ends with a slash
     if (!root.empty() && root[root.length() - 1] != '/') {
         root += '/';
+        DebugLogger::log("Added trailing slash to root path: " + root);
+    }
+    
+    // Handle special case for root path
+    if (uriPath == "/" || uriPath.empty()) {
+        DebugLogger::log("URI is root path, returning root directory: " + root);
+        return root;
     }
     
     // If the URI exactly matches the location path
     if (uriPath == location.getPath()) {
+        DebugLogger::log("URI exactly matches location path, returning root: " + root);
         return root;
     }
     
@@ -287,13 +300,45 @@ std::string FileUtils::resolvePath(const std::string& uriPath, const LocationCon
         // Extract the part after the location path
         std::string relativePath = uriPath.substr(locationPath.length());
         
+        // If relativePath is empty but we're not dealing with root location,
+        // we should return the root directory
+        if (relativePath.empty() && locationPath != "/") {
+            DebugLogger::log("Empty relative path for non-root location, returning root: " + root);
+            return root;
+        }
+        
+        // Ensure relativePath doesn't start with a slash
+        if (!relativePath.empty() && relativePath[0] == '/') {
+            relativePath = relativePath.substr(1);
+            DebugLogger::log("Removed leading slash from relative path: " + relativePath);
+        }
+        
         // Concatenate with root
-        return root + relativePath;
+        std::string result = root + relativePath;
+        DebugLogger::log("Resolved path: " + result);
+        return result;
+    }
+    
+    // Handle case where location path is root "/"
+    if (locationPath == "/") {
+        std::string relativePath = uriPath;
+        
+        // Ensure relativePath doesn't start with a slash
+        if (!relativePath.empty() && relativePath[0] == '/') {
+            relativePath = relativePath.substr(1);
+            DebugLogger::log("Removed leading slash from relative path: " + relativePath);
+        }
+        
+        std::string result = root + relativePath;
+        DebugLogger::log("Resolved path for root location: " + result);
+        return result;
     }
     
     // Default case: Just append the URI to the root
     // This is a fallback and should not normally be reached
-    return root + uriPath;
+    std::string result = root + uriPath;
+    DebugLogger::logError("Using fallback path resolution: " + result);
+    return result;
 }
 
 // Implementation of new FileUtils methods
