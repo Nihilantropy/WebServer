@@ -437,31 +437,46 @@ LocationConfig* Connection::_findLocation(const std::string& requestPath)
          it != locations.end(); ++it) {
         const std::string& locationPath = (*it)->getPath();
         
-        DebugLogger::log("Checking location: " + locationPath);
+        DebugLogger::log("Checking if location '" + locationPath + "' matches request '" + requestPath + "'");
+        
+        // Special case for root location - lowest priority
+        if (locationPath == "/") {
+            if (bestMatch == NULL) { // Only use root if we have no other match
+                bestMatch = *it;
+                bestMatchLength = 1;
+                DebugLogger::log("Root location '/' is fallback match");
+            }
+            continue; // Skip the rest of the loop for root location
+        }
         
         // Check if location path is a prefix of the request path
         if (requestPath.find(locationPath) == 0) {
-            // Make sure it's a complete path segment match
-            if (locationPath == "/" || 
-                requestPath.length() == locationPath.length() || 
-                requestPath[locationPath.length()] == '/') {
+            // For non-root locations, verify it's a proper segment match
+            size_t locPathLen = locationPath.length();
+            
+            // If request path matches exactly OR
+            // If location ends with '/' (directory) OR 
+            // If next character in request path is '/' (path boundary)
+            if (requestPath.length() == locPathLen || 
+                locationPath[locPathLen-1] == '/' || 
+                (requestPath.length() > locPathLen && requestPath[locPathLen] == '/')) {
                 
                 // Check if this location is a better match than the current best
-                if (locationPath.length() > bestMatchLength) {
+                if (locPathLen > bestMatchLength) {
                     bestMatch = *it;
-                    bestMatchLength = locationPath.length();
+                    bestMatchLength = locPathLen;
                     
                     std::stringstream ss;
-                    ss << bestMatchLength;
-                    DebugLogger::log("New best match: " + locationPath + 
-                                  " (length: " + ss.str() + ")");
+                    ss << locPathLen;
+                    DebugLogger::log("New best match: '" + locationPath + 
+                                  "' (length: " + ss.str() + ")");
                 }
             }
         }
     }
     
     if (bestMatch) {
-        DebugLogger::log("Found best match location: " + bestMatch->getPath());
+        DebugLogger::log("Final best match location: " + bestMatch->getPath());
     } else {
         DebugLogger::logError("No matching location found for " + requestPath);
     }
