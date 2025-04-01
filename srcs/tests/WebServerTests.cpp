@@ -258,7 +258,7 @@ bool WebServerTests::testHttpRequestParsing() {
     std::string postRequestStr = "POST /submit HTTP/1.1\r\n"
                                 "Host: example.com\r\n"
                                 "Content-Type: application/x-www-form-urlencoded\r\n"
-                                "Content-Length: 23\r\n"
+                                "Content-Length: 21\r\n"
                                 "\r\n"
                                 "name=John&surname=Doe";
     
@@ -272,7 +272,7 @@ bool WebServerTests::testHttpRequestParsing() {
     if (request.getMethod() != Request::POST ||
         request.getPath() != "/submit" ||
         request.getBody() != "name=John&surname=Doe" ||
-        request.getHeaders().getContentLength() != 23) {
+        request.getHeaders().getContentLength() != 21) {
         return false;
     }
     
@@ -901,6 +901,7 @@ bool WebServerTests::simulateRequest(
     // Process the request
     connection.readData();
     connection.process();
+    connection.writeData();
     
     // Read response
     char buffer[4096];
