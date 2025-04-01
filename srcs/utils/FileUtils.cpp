@@ -270,6 +270,14 @@ std::string FileUtils::resolvePath(const std::string& uriPath, const LocationCon
     
     std::string locationPath = location.getPath();
     std::string root = location.getRoot();
+
+    if (!root.empty() && root[0] != '/') {
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+            root = std::string(cwd) + "/" + root;
+            DebugLogger::log("Converted relative root to absolute: " + root);
+        }
+    }
     
     // Ensure location path ends with a slash if it's not "/"
     if (locationPath != "/" && locationPath[locationPath.length() - 1] != '/') {

@@ -72,4 +72,7 @@ private:
                                const std::string& body,
                                int& statusCode,
                                std::string& responseBody);
+
+    static bool testIndexFileServing();
+    static bool testCompleteCgiEnvironment();
 };

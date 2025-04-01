@@ -36,14 +36,12 @@ void LocationConfigValidator::_validatePath(void) const
 void LocationConfigValidator::_validateRoot(void) const
 {
     const std::string& root = _locationConfig.getRoot();
+    const std::string& redirection = _locationConfig.getRedirection();
     
-    // Root should not be empty
-    if (root.empty()) {
+    // Root should not be empty UNLESS this is a redirect location
+    if (root.empty() && redirection.empty()) {
         throw ValidationException("Root directory cannot be empty for location: " + _locationConfig.getPath());
     }
-    
-    // Could add additional validation here, like checking if directory exists
-    // But that might be more appropriate at server startup
 }
 
 void LocationConfigValidator::_validateAllowedMethods(void) const
@@ -118,31 +116,31 @@ void LocationConfigValidator::_validateRedirection(void) const
     // If redirection is specified, it should be valid
     const std::string& redirection = _locationConfig.getRedirection();
     if (!redirection.empty()) {
-        // Parse redirection string to get status code and redirect URL
+        // Parse redirection string (format should be "STATUS URL")
         std::istringstream iss(redirection);
-        std::string token;
-        int statusCode;
+        int statusCode = 0;
         std::string redirectUrl;
         
-        // Skip the "return" keyword
-        iss >> token;
-        
         // Get status code
-        iss >> statusCode;
-        
-        // Get redirect URL
-        iss >> redirectUrl;
-        
-        // Validate status code (should be 3xx)
-        if (statusCode < 300 || statusCode > 399) {
-            std::stringstream ss;
-            ss << "Invalid redirect status code: " << statusCode << " for location: " << _locationConfig.getPath();
-            throw ValidationException(ss.str());
-        }
-        
-        // Validate redirect URL
-        if (redirectUrl.empty()) {
-            throw ValidationException("Redirect URL cannot be empty for location: " + _locationConfig.getPath());
+        if (iss >> statusCode) {
+            // Get redirect URL
+            if (iss >> redirectUrl) {
+                // Validate status code (should be 3xx)
+                if (statusCode < 300 || statusCode > 399) {
+                    std::stringstream ss;
+                    ss << "Invalid redirect status code: " << statusCode << " for location: " << _locationConfig.getPath();
+                    throw ValidationException(ss.str());
+                }
+                
+                // Validate redirect URL
+                if (redirectUrl.empty()) {
+                    throw ValidationException("Redirect URL cannot be empty for location: " + _locationConfig.getPath());
+                }
+            } else {
+                throw ValidationException("Missing redirect URL for location: " + _locationConfig.getPath());
+            }
+        } else {
+            throw ValidationException("Invalid redirect format (should be 'STATUS URL') for location: " + _locationConfig.getPath());
         }
     }
 }

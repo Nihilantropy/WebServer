@@ -31,6 +31,7 @@ namespace {
     }
 }
 
+
 bool WebServerTests::runAllTests() {
     setupTestDirectories();
     
@@ -97,6 +98,15 @@ bool WebServerTests::runAllTests() {
     bool cgiExecTest = testCgiExecution();
     printTestResult("CGI Execution", cgiExecTest);
     allPassed &= cgiExecTest;
+    
+    // New Tests For Production Accuracy
+    bool indexServingTest = testIndexFileServing();
+    printTestResult("Index File Serving", indexServingTest);
+    allPassed &= indexServingTest;
+    
+    bool completeCgiEnvTest = testCompleteCgiEnvironment();
+    printTestResult("Complete CGI Environment", completeCgiEnvTest);
+    allPassed &= completeCgiEnvTest;
     
     // Integration Tests
     bool getTest = testGetRequest();
@@ -1104,4 +1114,152 @@ bool WebServerTests::testErrorHandling() {
     }
     
     return true;
+}
+
+// Add these implementations to WebServerTests.cpp
+
+bool WebServerTests::testIndexFileServing() {
+    // Setup test directories
+    std::string testDirPath = TEST_DIR + "index_test/";
+    system(("mkdir -p " + testDirPath).c_str());
+    
+    // Create test index file
+    std::string indexContent = "<html><body><h1>Index File</h1></body></html>";
+    if (!createTestFile(testDirPath + "index.html", indexContent)) {
+        system(("rm -rf " + testDirPath).c_str());
+        return false;
+    }
+    
+    // 1. Test request to directory with trailing slash
+    std::map<std::string, std::string> headers;
+    headers["Host"] = "example.com";
+    
+    int statusCode;
+    std::string responseBody;
+    
+    bool result = simulateRequest(
+        "GET", 
+        "/index_test/", 
+        headers, 
+        "", 
+        statusCode, 
+        responseBody
+    );
+    
+    // Verify index file was served
+    if (!result || statusCode != 200 || responseBody != indexContent) {
+        std::cerr << "Failed test directory with trailing slash. Status: " << statusCode << std::endl;
+        if (result && statusCode == 200) {
+            std::cerr << "Expected body: " << indexContent << std::endl;
+            std::cerr << "Actual body: " << responseBody << std::endl;
+        }
+        system(("rm -rf " + testDirPath).c_str());
+        return false;
+    }
+    
+    // 2. Test request to directory without trailing slash (should redirect)
+    result = simulateRequest(
+        "GET", 
+        "/index_test", 
+        headers, 
+        "", 
+        statusCode, 
+        responseBody
+    );
+    
+    // Verify redirect
+    if (!result || statusCode != 301 || 
+        responseBody.find("Redirecting to /index_test/") == std::string::npos) {
+        std::cerr << "Failed test directory without trailing slash. Status: " << statusCode << std::endl;
+        if (result) {
+            std::cerr << "Expected 301 redirect to /index_test/" << std::endl;
+            std::cerr << "Response body: " << responseBody << std::endl;
+        }
+        system(("rm -rf " + testDirPath).c_str());
+        return false;
+    }
+    
+    // Clean up
+    system(("rm -rf " + testDirPath).c_str());
+    return true;
+}
+
+bool WebServerTests::testCompleteCgiEnvironment() {
+    // Create a CGI script that outputs all environment variables
+    std::string testCgiPath = TEST_DIR + "env.cgi";
+    std::string cgiScript = 
+        "#!/bin/sh\n"
+        "echo \"Content-type: text/plain\\r\\n\"\n"
+        "echo \"\\r\"\n"
+        "env | sort\n";
+    
+    if (!createTestFile(testCgiPath, cgiScript)) {
+        return false;
+    }
+    
+    // Make the script executable
+    if (chmod(testCgiPath.c_str(), S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0) {
+        std::cerr << "Failed to set execute permissions on CGI script" << std::endl;
+        cleanupTestFile(testCgiPath);
+        return false;
+    }
+    
+    // Create a request with query string and extra path info
+    Request request;
+    std::string requestStr = 
+        "GET /cgi-bin/env.cgi/extra/path?foo=bar&test=value HTTP/1.1\r\n"
+        "Host: example.com\r\n"
+        "X-Custom-Header: CustomValue\r\n"
+        "\r\n";
+    
+    std::string buffer = requestStr;
+    request.parse(buffer);
+    
+    // Execute CGI and check for required variables
+    LocationConfig location;
+    location.setPath("/cgi-bin/");
+    location.setRoot(TEST_DIR);
+    
+    std::vector<std::string> cgiExtensions;
+    cgiExtensions.push_back(".cgi");
+    location.setCgiExtentions(cgiExtensions);
+    location.setCgiPath("/bin/sh");
+    
+    Response response;
+    CGIHandler handler;
+    bool result = handler.executeCGI(request, testCgiPath, location, response);
+    
+    if (!result) {
+        std::cerr << "CGI execution failed" << std::endl;
+        cleanupTestFile(testCgiPath);
+        return false;
+    }
+    
+    // Check for required CGI environment variables
+    const std::string& body = response.getBody();
+    const char* required_vars[] = {
+        "GATEWAY_INTERFACE=CGI/1.1",
+        "HTTP_HOST=example.com",
+        "HTTP_X_CUSTOM_HEADER=CustomValue",
+        "PATH_INFO=/extra/path",
+        "QUERY_STRING=foo=bar&test=value",
+        "REQUEST_METHOD=GET",
+        "SCRIPT_NAME=/cgi-bin/env.cgi",
+        "SERVER_PROTOCOL=HTTP/1.1",
+        NULL
+    };
+    
+    // Check that each required variable is present
+    bool allVarsPresent = true;
+    for (int i = 0; required_vars[i] != NULL; i++) {
+        if (body.find(required_vars[i]) == std::string::npos) {
+            std::cerr << "Missing CGI environment variable: " << required_vars[i] << std::endl;
+            allVarsPresent = false;
+            // Continue checking other variables instead of returning immediately
+        }
+    }
+    
+    // Clean up
+    cleanupTestFile(testCgiPath);
+    return allVarsPresent;
 }
