@@ -63,6 +63,8 @@ Note: Unnecessary use of -X or --request, POST is already inferred.
 * Connection #0 to host localhost left intact
 "
 
+SOLVED
+
 ---
 
 Description: Unkown method causes infinite loop on the server

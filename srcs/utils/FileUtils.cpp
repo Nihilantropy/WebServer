@@ -373,18 +373,20 @@ bool FileUtils::createDirectory(const std::string& path, mode_t mode)
 
 bool FileUtils::isPathWithinDirectory(const std::string& path, const std::string& parentDir)
 {
-    // Convert both paths to absolute paths
-    char absPath[PATH_MAX];
+    // Create absolute path for the parent directory
     char absParentDir[PATH_MAX];
-    
-    // We need to use realpath which is POSIX, not std::
-    if (realpath(path.c_str(), absPath) == NULL || 
-        realpath(parentDir.c_str(), absParentDir) == NULL) {
-        return false;
+    if (realpath(parentDir.c_str(), absParentDir) == NULL) {
+        // Parent directory doesn't exist - create it
+        if (!createDirectory(parentDir)) {
+            return false;
+        }
+        
+        // Try again after creating
+        if (realpath(parentDir.c_str(), absParentDir) == NULL) {
+            return false;
+        }
     }
     
-    // Check if absPath starts with absParentDir
-    std::string absPathStr(absPath);
     std::string absParentDirStr(absParentDir);
     
     // Ensure parent dir ends with a slash
@@ -392,6 +394,35 @@ bool FileUtils::isPathWithinDirectory(const std::string& path, const std::string
         absParentDirStr += '/';
     }
     
+    // For the file path, we need a different approach since the file might not exist yet
+    // Split the path into directory and filename components
+    std::string dirName;
+    std::string fileName;
+    
+    size_t lastSlash = path.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+        dirName = path.substr(0, lastSlash);
+        fileName = path.substr(lastSlash + 1);
+    } else {
+        dirName = ".";
+        fileName = path;
+    }
+    
+    // Check if the directory exists and get its absolute path
+    char absDirName[PATH_MAX];
+    if (realpath(dirName.c_str(), absDirName) == NULL) {
+        return false;
+    }
+    
+    std::string absDirNameStr(absDirName);
+    if (absDirNameStr[absDirNameStr.length() - 1] != '/') {
+        absDirNameStr += '/';
+    }
+    
+    // The full absolute path of the file (even if it doesn't exist yet)
+    std::string absPathStr = absDirNameStr + fileName;
+    
+    // Now check if this path starts with the absolute parent directory path
     return absPathStr.find(absParentDirStr) == 0;
 }
 

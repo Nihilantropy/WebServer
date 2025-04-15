@@ -19,6 +19,7 @@ bool Request::parse(std::string& buffer)
 {
     if (!_headersParsed) {
         if (!parseHeaders(buffer)) {
+            std::cout << "EVVIVA parse!\n";
             return false;
         }
     }
@@ -62,6 +63,8 @@ bool Request::parseHeaders(std::string& buffer)
     // Parse headers section
     std::istringstream stream(headers);
     std::string line;
+    
+    
     
     // Parse request line
     if (!std::getline(stream, line)) {
@@ -107,6 +110,7 @@ bool Request::parseHeaders(std::string& buffer)
     // If we got here, headers parsed successfully
     _headersParsed = true;
     
+    
     // Dump parsed headers
     DebugLogger::log("Parsed headers:");
     const std::map<std::string, std::string>& headerMap = _headers.getAll();
@@ -126,12 +130,17 @@ bool Request::parseHeaders(std::string& buffer)
         lenStr << _headers.getContentLength();
         DebugLogger::log("Body expected, Content-Length: " + lenStr.str());
     }
-    
+
     return true;
 }
 
 bool Request::parseBody(std::string& buffer)
 {
+    std::stringstream entryLog;
+    entryLog << "parseBody entry - Headers parsed: " << (_headersParsed ? "yes" : "no")
+            << ", Complete: " << (_complete ? "yes" : "no");
+    DebugLogger::log(entryLog.str());
+    
     if (!_headersParsed) {
         DebugLogger::logError("Cannot parse body before headers");
         return false;
@@ -140,6 +149,16 @@ bool Request::parseBody(std::string& buffer)
     if (_complete) {
         DebugLogger::log("Request already complete");
         return true;
+    }
+    
+    // Log multipart form details
+    if (_headers.getContentType().find("multipart/form-data") != std::string::npos) {
+        DebugLogger::log("Multipart request detected");
+        size_t boundaryPos = _headers.getContentType().find("boundary=");
+        if (boundaryPos != std::string::npos) {
+            std::string boundary = _headers.getContentType().substr(boundaryPos);
+            DebugLogger::log("Boundary info: " + boundary);
+        }
     }
     
     // Handle chunked encoding
@@ -162,19 +181,44 @@ bool Request::parseBody(std::string& buffer)
            << ", Will read: " << bytesToRead;
         DebugLogger::log("Content-Length: " + ss.str());
         
+        // Log buffer beginning and end for multipart debugging
+        if (_headers.getContentType().find("multipart/form-data") != std::string::npos) {
+            if (!buffer.empty()) {
+                size_t startSize = buffer.size() > 50 ? 50 : buffer.size();
+                size_t endSize = buffer.size() > 50 ? 50 : 0;
+                if (buffer.size() > 100) {
+                    DebugLogger::log("Buffer start: " + buffer.substr(0, startSize));
+                    DebugLogger::log("Buffer end: " + buffer.substr(buffer.size() - endSize));
+                } else {
+                    DebugLogger::log("Buffer: " + buffer);
+                }
+            }
+        }
+        
         // Append to body
         _body.append(buffer, 0, bytesToRead);
         _bodyBytesRead += bytesToRead;
         
         // Remove read data from buffer
+        size_t oldBufferSize = buffer.size();
         buffer.erase(0, bytesToRead);
+        
+        std::stringstream bufLog;
+        bufLog << "Buffer size before/after: " << oldBufferSize << "/" << buffer.size();
+        DebugLogger::log(bufLog.str());
         
         // Check if body is complete
         if (_bodyBytesRead >= contentLength) {
+            // Check ending of multipart data
+            if (_headers.getContentType().find("multipart/form-data") != std::string::npos && _body.size() > 50) {
+                DebugLogger::log("Multipart end part: " + _body.substr(_body.size() - 50));
+            }
+            
             std::stringstream sizeStr;
             sizeStr << _body.size();
             DebugLogger::log("Body complete, total size: " + sizeStr.str());
             _complete = true;
+            DebugLogger::log("Setting request as COMPLETE");
         } else {
             std::stringstream remainStr;
             remainStr << (contentLength - _bodyBytesRead);
@@ -185,6 +229,12 @@ bool Request::parseBody(std::string& buffer)
         DebugLogger::log("No body expected (Content-Length is 0)");
         _complete = true;
     }
+    
+    std::stringstream exitLog;
+    exitLog << "parseBody exit - Complete: " << (_complete ? "yes" : "no")
+           << ", Body size: " << _body.size()
+           << ", BodyBytesRead: " << _bodyBytesRead;
+    DebugLogger::log(exitLog.str());
     
     return _complete;
 }

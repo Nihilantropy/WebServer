@@ -50,6 +50,12 @@ bool Connection::readData()
         return true;
     }
     
+    // Log pre-read state and buffer size
+    std::stringstream preReadLog;
+    preReadLog << "[DEBUG-UPLOAD] Pre-read state: " << _state 
+              << ", Input buffer size: " << _inputBuffer.size();
+    DebugLogger::log(preReadLog.str());
+    
     char buffer[4096];
     ssize_t bytesRead;
     
@@ -62,6 +68,11 @@ bool Connection::readData()
         _inputBuffer.append(newData);
         _updateLastActivity();
         
+        // Log data received
+        std::stringstream dataLog;
+        dataLog << "Read " << bytesRead << " bytes, total buffer: " << _inputBuffer.size();
+        DebugLogger::log(dataLog.str());
+        
         std::cout << "Read " << bytesRead << " bytes from " << _clientIp << std::endl;
         DebugLogger::hexDump("Raw request data", newData);
         
@@ -70,8 +81,24 @@ bool Connection::readData()
             DebugLogger::log("Parsing headers...");
             if (_request.parseHeaders(_inputBuffer)) {
                 DebugLogger::log("Headers parsed successfully");
+                
+                // Log important headers
+                std::stringstream headerLog;
+                headerLog << "Content-Length: " << _request.getHeaders().getContentLength()
+                         << ", Content-Type: " << _request.getHeaders().getContentType();
+                DebugLogger::log(headerLog.str());
+                
                 DebugLogger::logRequest(_clientIp, _request.getMethodStr(), 
                                      _request.getPath(), _request.getHeaders().toString());
+                
+                // Check for Expect: 100-continue header and handle it
+                if (_request.getHeaders().get("expect") == "100-continue") {
+                    DebugLogger::log("Detected Expect: 100-continue header, sending 100 Continue response");
+                    
+                    // Send 100 Continue response
+                    std::string continueResponse = "HTTP/1.1 100 Continue\r\n\r\n";
+                    send(_clientFd, continueResponse.c_str(), continueResponse.length(), 0);
+                }
                 
                 // Headers complete, check if we need to read the body
                 if (_request.isComplete()) {
@@ -80,26 +107,68 @@ bool Connection::readData()
                     _state = PROCESSING;
                     process();
                 } else {
-                    // Body expected, move to reading body
-                    DebugLogger::log("Body expected, moving to READING_BODY state");
-                    
-                    std::stringstream ss;
-                    ss << _request.getHeaders().getContentLength();
-                    DebugLogger::log("Content-Length: " + ss.str());
-                    
-                    _state = READING_BODY;
+                    // Body expected, check if body data is already in buffer
+                    if (_inputBuffer.size() > 0) {
+                        DebugLogger::log("Body data already in buffer, attempting to parse immediately");
+                        std::stringstream bufLog;
+                        bufLog << "Buffer size after header parsing: " << _inputBuffer.size();
+                        DebugLogger::log(bufLog.str());
+                        
+                        // Try parsing body right away
+                        bool parseResult = _request.parseBody(_inputBuffer);
+                        
+                        std::stringstream resultLog;
+                        resultLog << "Immediate body parse result: " << (parseResult ? "true" : "false")
+                                 << ", isComplete: " << (_request.isComplete() ? "true" : "false");
+                        DebugLogger::log(resultLog.str());
+                        
+                        if (parseResult) {
+                            // Body complete, move to processing
+                            DebugLogger::log("Body parsed successfully, moving to PROCESSING state");
+                            _state = PROCESSING;
+                            process();
+                            return true;
+                        } else {
+                            // Body parsing started but not complete, continue in READING_BODY state
+                            DebugLogger::log("Body partially parsed, moving to READING_BODY state");
+                            _state = READING_BODY;
+                        }
+                    } else {
+                        // No body data in buffer yet, switch to READING_BODY state
+                        DebugLogger::log("Body expected, moving to READING_BODY state");
+                        
+                        std::stringstream ss;
+                        ss << _request.getHeaders().getContentLength();
+                        DebugLogger::log("Content-Length: " + ss.str());
+                        
+                        _state = READING_BODY;
+                    }
                 }
             } else {
+                if (_request.getMethod() == Request::UNKNOWN) {
+                    DebugLogger::logError("Unknown HTTP method");
+                    _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
+                    return false; // TODO we have to responde with a 405 wrong method
+                }
                 DebugLogger::log("Headers not complete yet, continuing to read");
             }
         } else if (_state == READING_BODY) {
             DebugLogger::log("Parsing body...");
             
-            std::stringstream ss;
-            ss << _inputBuffer.size();
-            DebugLogger::log("Body buffer size: " + ss.str());
+            std::stringstream beforeLog;
+            beforeLog << "Before parseBody call - Buffer size: " << _inputBuffer.size()
+                     << ", Content-Length: " << _request.getHeaders().getContentLength();
+            DebugLogger::log(beforeLog.str());
             
-            if (_request.parseBody(_inputBuffer)) {
+            bool parseResult = _request.parseBody(_inputBuffer);
+            
+            std::stringstream afterLog;
+            afterLog << "parseBody result: " << (parseResult ? "true" : "false")
+                    << ", isComplete: " << (_request.isComplete() ? "true" : "false")
+                    << ", Remaining buffer: " << _inputBuffer.size();
+            DebugLogger::log(afterLog.str());
+            
+            if (parseResult) {
                 // Body complete, move to processing
                 DebugLogger::log("Body parsed successfully, moving to PROCESSING state");
                 
@@ -108,11 +177,17 @@ bool Connection::readData()
                 DebugLogger::log("Body size: " + bodySizeStr.str());
                 
                 _state = PROCESSING;
+                DebugLogger::log("State transition to PROCESSING");
                 process();
             } else {
                 DebugLogger::log("Body not complete yet, continuing to read");
-                DebugLogger::log("Current body content: " + _request.getBody().substr(0, 100) + 
-                             (_request.getBody().size() > 100 ? "..." : ""));
+                
+                // Print first part of body content for debugging
+                if (_request.getBody().size() > 0) {
+                    const std::string& body = _request.getBody();
+                    std::string preview = body.substr(0, body.size() > 100 ? 100 : body.size());
+                    DebugLogger::log("Body preview: " + preview + (body.size() > 100 ? "..." : ""));
+                }
             }
         }
         
@@ -126,7 +201,9 @@ bool Connection::readData()
         // Error or would block
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             // No data available, try again later
-            DebugLogger::log("No data available (EAGAIN/EWOULDBLOCK)");
+            std::stringstream eagainLog;
+            eagainLog << "EAGAIN/EWOULDBLOCK - No data available, state: " << _state;
+            DebugLogger::log(eagainLog.str());
             return true;
         } else {
             // Error
@@ -269,6 +346,8 @@ void Connection::_processRequest()
     
     // Check if method is supported
     Request::Method method = _request.getMethod();
+
+    std::cout << "Request method is: " << method << std::endl;
     if (method == Request::UNKNOWN) {
         DebugLogger::logError("Unknown HTTP method");
         _handleError(HTTP_STATUS_NOT_IMPLEMENTED);

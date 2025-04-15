@@ -155,6 +155,8 @@ bool Connection::readData()
                     _state = READING_BODY;
                 }
             }
+            else
+                std::cout << "EVVIVA!\n";
         } else if (_state == READING_BODY) {
             if (_request.parseBody(_inputBuffer)) {
                 // Body complete, move to processing
