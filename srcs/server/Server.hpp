@@ -25,7 +25,7 @@ private:
     std::vector<Socket*>                      _listenSockets;    // Sockets for each host:port
     std::vector<ServerConfig*>                _serverConfigs;    // Server configurations
     std::map<std::string, ServerConfig*>      _defaultServers;   // Default server for each host:port
-    
+
     IOMultiplexer                             _multiplexer;      // I/O multiplexer
     std::map<int, Connection*>                _connections;      // Active connections
     
