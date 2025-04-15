@@ -491,11 +491,29 @@ void Connection::_handleRedirection(const LocationConfig& location)
     std::istringstream iss(redirection);
     
     // Extract status code and URL
-    std::string returnKeyword;
     int statusCode;
     std::string redirectUrl;
     
-    iss >> returnKeyword >> statusCode >> redirectUrl;
+    // Parse the redirection string
+    if (!(iss >> statusCode >> redirectUrl)) {
+        // Handle parsing failure
+        _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+        return;
+    }
+    
+    // Ensure URL is an absolute path (starts with /)
+    if (redirectUrl.length() > 0 && redirectUrl[0] == '.') {
+        // Convert relative path starting with ./ to absolute
+        if (redirectUrl.length() > 1 && redirectUrl[1] == '/') {
+            redirectUrl = redirectUrl.substr(1); // Remove the dot
+        } else {
+            // Add leading slash
+            redirectUrl = "/" + redirectUrl;
+        }
+    } else if (redirectUrl.length() > 0 && redirectUrl[0] != '/') {
+        // Add leading slash to make it an absolute path
+        redirectUrl = "/" + redirectUrl;
+    }
     
     // Set up the redirect response
     _response.redirect(redirectUrl, statusCode);

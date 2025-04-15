@@ -18,6 +18,8 @@ Result: "
 curl: (1) Unsupported HTTP/1 subversion in response
 "
 
+SOLVED
+
 ---
 
 Issue: File upload not working
