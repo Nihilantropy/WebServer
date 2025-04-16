@@ -285,3 +285,151 @@ Wrote 110 bytes to 127.0.0.1
 [DEBUG] [DEBUG-UPLOAD] Pre-read state: 0, Input buffer size: 0
 Connection closed by client: 127.0.0.1
 "
+
+---
+
+Description: testing a sh script with tail -f command
+Test: curl -v http://localhost:8080/cgi-bin/malus.sh
+Result: "
+* Host localhost:8080 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:8080...
+* connect to ::1 port 8080 from ::1 port 54104 failed: Connection refused
+*   Trying 127.0.0.1:8080...
+* Connected to localhost (127.0.0.1) port 8080
+> GET /cgi-bin/malus.sh HTTP/1.1
+> Host: localhost:8080
+> User-Agent: curl/8.5.0
+> Accept: */*
+> 
+< HTTP/1.1 200 OK
+< Connection: keep-alive
+< Content-Length: 37
+< Content-Type: text/html
+< Server: WebServer/1.0
+< 
+
+echo "Sei stato hackerato!"
+
+* Connection #0 to host localhost left intact
+tail -f
+"
+Server Logs: "
+New connection from 127.0.0.1 (fd: 6)
+[DEBUG] [DEBUG-UPLOAD] Pre-read state: 0, Input buffer size: 0
+[DEBUG] Read 93 bytes, total buffer: 93
+Read 93 bytes from 127.0.0.1
+[HEXDUMP] Raw request data (93 bytes):
+47 45 54 20 2f 63 67 69 2d 62 69 6e 2f 6d 61 6c 
+75 73 2e 73 68 20 48 54 54 50 2f 31 2e 31 0d 0a 
+48 6f 73 74 3a 20 6c 6f 63 61 6c 68 6f 73 74 3a 
+38 30 38 30 0d 0a 55 73 65 72 2d 41 67 65 6e 74 
+3a 20 63 75 72 6c 2f 38 2e 35 2e 30 0d 0a 41 63 
+63 65 70 74 3a 20 2a 2f 2a 0d 0a 0d 0a 
+[DEBUG] Parsing headers...
+[DEBUG] Found end of headers at position 89
+[DEBUG] Headers raw data:
+[DEBUG] GET /cgi-bin/malus.sh HTTP/1.1
+Host: localhost:8080
+User-Agent: curl/8.5.0
+Accept: */*
+
+
+[DEBUG] Request line: GET /cgi-bin/malus.sh HTTP/1.1
+[DEBUG] Method: GET, URI: /cgi-bin/malus.sh, Version: HTTP/1.1
+[DEBUG] Path: /cgi-bin/malus.sh (no query string)
+[DEBUG] Header line: Host: localhost:8080
+[DEBUG] Header line: User-Agent: curl/8.5.0
+[DEBUG] Header line: Accept: */*
+[DEBUG] Found empty line, end of headers
+[DEBUG] Parsed headers:
+[DEBUG] accept: */*
+[DEBUG] host: localhost:8080
+[DEBUG] user-agent: curl/8.5.0
+[DEBUG] No body expected, request is complete
+[DEBUG] Headers parsed successfully
+[DEBUG] Content-Length: 0, Content-Type: 
+
+[REQUEST] 127.0.0.1 - GET /cgi-bin/malus.sh
+------- Headers -------
+Accept: */*
+Host: localhost:8080
+User-Agent: curl/8.5.0
+
+----------------------
+[DEBUG] Request is complete (no body required), moving to PROCESSING state
+Processing GET request for /cgi-bin/malus.sh from 127.0.0.1
+[DEBUG] Processing request: GET /cgi-bin/malus.sh
+Request method is: 0
+[DEBUG] Finding location for path: /cgi-bin/malus.sh
+[DEBUG] Checking if location '/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Root location '/' is fallback match
+[DEBUG] Checking if location '/cgi-bin/' matches request '/cgi-bin/malus.sh'
+[DEBUG] New best match: '/cgi-bin/' (length: 9)
+[DEBUG] Checking if location '/upload' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/uploads/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/uploads/images' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/kapouet/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Final best match location: /cgi-bin/
+[DEBUG] Found location block: /cgi-bin/ with root: ./var/www/cgi
+[DEBUG] Allowed methods for this location:
+[DEBUG]  - GET
+[DEBUG]  - POST
+[DEBUG] Handling GET request
+[DEBUG] Handling static file for path: /cgi-bin/malus.sh
+[DEBUG] Finding location for path: /cgi-bin/malus.sh
+[DEBUG] Checking if location '/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Root location '/' is fallback match
+[DEBUG] Checking if location '/cgi-bin/' matches request '/cgi-bin/malus.sh'
+[DEBUG] New best match: '/cgi-bin/' (length: 9)
+[DEBUG] Checking if location '/upload' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/uploads/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/uploads/images' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/kapouet/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Final best match location: /cgi-bin/
+[DEBUG] Resolving URI path: /cgi-bin/malus.sh for location path: /cgi-bin/ with root: ./var/www/cgi
+[DEBUG] Converted relative root to absolute: /home/crea/Desktop/WebServer/./var/www/cgi
+[DEBUG] Added trailing slash to root path: /home/crea/Desktop/WebServer/./var/www/cgi/
+[DEBUG] Resolved path: /home/crea/Desktop/WebServer/./var/www/cgi/malus.sh
+[DEBUG] Resolved filesystem path: /home/crea/Desktop/WebServer/./var/www/cgi/malus.sh
+[DEBUG] Serving regular file: /home/crea/Desktop/WebServer/./var/www/cgi/malus.sh
+[DEBUG] Serving file: /home/crea/Desktop/WebServer/./var/www/cgi/malus.sh
+[DEBUG] Read file contents, size: 47
+[DEBUG] File extension: sh, MIME type: application/octet-stream
+[DEBUG] Finding location for path: /cgi-bin/malus.sh
+[DEBUG] Checking if location '/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Root location '/' is fallback match
+[DEBUG] Checking if location '/cgi-bin/' matches request '/cgi-bin/malus.sh'
+[DEBUG] New best match: '/cgi-bin/' (length: 9)
+[DEBUG] Checking if location '/upload' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/uploads/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/uploads/images' matches request '/cgi-bin/malus.sh'
+[DEBUG] Checking if location '/kapouet/' matches request '/cgi-bin/malus.sh'
+[DEBUG] Final best match location: /cgi-bin/
+[DEBUG] File is a CGI script, extension: sh
+CGI execution successful for: /home/crea/Desktop/WebServer/./var/www/cgi/malus.sh
+[DEBUG] Building response with status code: 200
+[DEBUG] Added response headers
+[DEBUG] Added response body, size: 37
+[DEBUG] Complete response size: 148
+
+[RESPONSE] Status: 200
+------- Headers -------
+Connection: keep-alive
+Content-Length: 37
+Content-Type: text/html
+Server: WebServer/1.0
+
+----------------------
+[DEBUG] Response body length: 37
+[DEBUG] Writing response data, buffer size: 148
+Wrote 148 bytes to 127.0.0.1
+[DEBUG] Wrote 148 bytes to client
+[DEBUG] Remaining output buffer size: 0
+[DEBUG] Response fully sent
+[DEBUG] Keep-alive: yes
+[DEBUG] Keeping connection alive, resetting for next request
+[DEBUG] [DEBUG-UPLOAD] Pre-read state: 0, Input buffer size: 0
+Connection closed by client: 127.0.0.1
+"

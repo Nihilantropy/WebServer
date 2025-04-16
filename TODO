@@ -1,0 +1,6 @@
+add this configuration cgi addition
+location /cgi-bin/ {
+    cgi_handler .php:/usr/bin/php-cgi .py:/usr/bin/python .sh:/bin/sh;
+}
+
+This will use differetn interpreter for different file extentions
