@@ -85,4 +85,9 @@ Result: "
 ^C (interrupted by SIGINT)
 "
 
+SOLVED
+
 ---
+
+
+.conf file has an issue were the configuration passes even if a directive is not ended with a ';'.

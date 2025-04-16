@@ -31,6 +31,35 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
     _scriptPath = scriptPath;
     _requestBody = request.getBody();
     
+    // Get the CGI interpreter path from location config
+    std::string cgiPath = location.getCgiPath();
+    if (cgiPath.empty()) {
+        std::cerr << "CGI path not specified in location configuration" << std::endl;
+        return false;
+    }
+    
+    // Check if file extension matches any of the configured CGI extensions
+    std::string extension = "";
+    size_t dotPos = scriptPath.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        extension = scriptPath.substr(dotPos);
+    }
+    
+    bool isCgiExtension = false;
+    const std::vector<std::string>& cgiExtensions = location.getCgiExtentions();
+    for (std::vector<std::string>::const_iterator it = cgiExtensions.begin(); 
+         it != cgiExtensions.end(); ++it) {
+        if (*it == extension) {
+            isCgiExtension = true;
+            break;
+        }
+    }
+    
+    if (!isCgiExtension) {
+        std::cerr << "File extension does not match configured CGI extensions" << std::endl;
+        return false;
+    }
+    
     // Extract PATH_INFO (part of the URL path after the script)
     std::string requestPath = request.getPath();
     std::string scriptDir = scriptPath.substr(0, scriptPath.find_last_of('/'));
@@ -71,7 +100,8 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
     fcntl(_outputPipe[1], F_SETFL, flags | O_NONBLOCK);
     
     // Execute CGI script
-    if (!_executeCGI()) {
+    if (!_executeCGI(cgiPath)) {
+        std::cerr << "CGI execution failed" << std::endl;
         _cleanup();
         return false;
     }
@@ -202,7 +232,7 @@ void CGIHandler::_setupEnvironment(const Request& request, const std::string& sc
     }
 }
 
-bool CGIHandler::_executeCGI()
+bool CGIHandler::_executeCGI(const std::string& cgiPath)
 {
     _pid = fork();
     
@@ -255,12 +285,13 @@ bool CGIHandler::_executeCGI()
         
         // Prepare command and arguments
         char* const argv[] = { 
-            const_cast<char*>(_scriptPath.c_str()), 
+            const_cast<char*>(cgiPath.c_str()),    // Interpreter path (PHP-CGI)
+            const_cast<char*>(_scriptPath.c_str()), // Script path
             NULL 
         };
         
         // Execute CGI script
-        execve(_scriptPath.c_str(), argv, envp);
+        execve(cgiPath.c_str(), argv, envp);
         
         // If execve returns, there was an error
         std::cerr << "Failed to execute CGI script: " << strerror(errno) << std::endl;

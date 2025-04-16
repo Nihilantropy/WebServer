@@ -30,7 +30,7 @@ private:
                           const std::string& pathInfo, const LocationConfig& location);
     
     // Execute the CGI script
-    bool _executeCGI();
+    bool _executeCGI(const std::string& cgiPath);
     
     // Read output from CGI
     bool _readFromCGI();

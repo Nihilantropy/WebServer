@@ -145,11 +145,24 @@ bool Connection::readData()
                     }
                 }
             } else {
+                // Headers parsing failed
                 if (_request.getMethod() == Request::UNKNOWN) {
-                    DebugLogger::logError("Unknown HTTP method");
+                    DebugLogger::logError("Unknown HTTP method: " + _request.getMethodStr());
+                    
+                    // Create a new response
+                    _response = Response();
+                    
+                    // Handle the 405 error
                     _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
-                    return false; // TODO we have to responde with a 405 wrong method
+                    
+                    // Build the response and transition to sending state
+                    _outputBuffer = _response.build();
+                    _state = SENDING_RESPONSE;
+                    
+                    // Return true to keep the connection open until we send the response
+                    return true;
                 }
+                
                 DebugLogger::log("Headers not complete yet, continuing to read");
             }
         } else if (_state == READING_BODY) {
