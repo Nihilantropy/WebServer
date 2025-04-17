@@ -8,6 +8,8 @@
 #include "../../exceptions/exceptions.hpp"
 #include "../../utils/StringUtils.hpp"
 
+#define DEFAULT_CLIENT_SIZE static_cast<size_t>(-1) // Use server's value
+
 /**
  * @brief class to store location-specific info
  */
@@ -20,6 +22,7 @@ public:
 	const std::string&					getPath( void ) const;
 	const std::string&					getRoot( void ) const;
 	const std::vector<std::string>&		getAllowedMethods( void ) const;
+	const size_t&						getClientMaxBodySize( void ) const;
 	const std::string&					getIndex( void ) const;
 	const bool&							getAutoIndex( void ) const;
 	const std::string&					getCgiPath( void ) const;
@@ -30,6 +33,7 @@ public:
 	void	setPath( const std::string& path );
 	void	setRoot( const std::string& root );
 	void	setAllowedMethods( std::vector<std::string>& allowedMethods );
+	void	setClientMaxBodySize(const size_t& clientMaxBodySize);
 	void	setIndex( const std::string& index );
 	void	setAutoIndex( const bool& autoIndex );
 	void	setCgiPath( const std::string& cgiPath );
@@ -44,6 +48,7 @@ private:
 	std::string					_path;
 	std::string					_root;
 	std::vector<std::string>	_allowedMethods;
+	size_t						_clientMaxBodySize;  // Client max body size in bytes (SIZE_MAX means inherit from server)
 	std::string					_index;
 	bool						_autoIndex;
 	std::string					_cgiPath;
@@ -52,6 +57,7 @@ private:
 	std::string					_redirection;
 
 	void	_addAllowedMethod( const std::string& allowedMethod );
+	size_t	_parseSize(const std::string& sizeStr);
 	void	_addCgiExtention( const std::string& cgiExtention );
 
 	LocationConfig( const LocationConfig& other );

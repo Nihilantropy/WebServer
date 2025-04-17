@@ -154,11 +154,12 @@ private:
     Connection& operator=(const Connection& other);
     
     // Helper methods
-    void _updateLastActivity();
-    void _processRequest();
-    void _handleStaticFile();
-    void _handleDefault();
-    void _handleError(int statusCode);
+    void        _updateLastActivity();
+    void        _processRequest();
+    void        _handleStaticFile();
+    size_t      _getEffectiveMaxBodySize(const std::string& requestPath);
+    void        _handleDefault();
+    void        _handleError(int statusCode);
     std::string _getErrorPage(int statusCode);
 
     // File handling methods

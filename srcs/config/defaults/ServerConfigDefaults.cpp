@@ -44,7 +44,7 @@ void ServerConfigDefaults::_setDefaultErrorPages(ServerConfig& config)
 void ServerConfigDefaults::_setDefaultClientMaxBodySize(ServerConfig& config)
 {
     // If client max body size is not set, set a default (1MB)
-    if (config.getClientMaxBodySize() == 0) {
+    if (config.getClientMaxBodySize() == NONE_CLIENT_SIZE) {
         config.setClientMaxBodySize(1024 * 1024); // 1MB
     }
 }

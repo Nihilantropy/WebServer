@@ -2,7 +2,7 @@
 
 LocationConfig::LocationConfig()
 	: _path(), _root(), _allowedMethods(), _index(),
-		_autoIndex(false), _cgiPath(), _cgiExtentions(), _uploadDir(), _redirection() {}
+		_autoIndex(false), _cgiPath(), _cgiExtentions(), _uploadDir(), _redirection(), _clientMaxBodySize(DEFAULT_CLIENT_SIZE) {}
 
 LocationConfig::~LocationConfig() {}
 
@@ -19,6 +19,7 @@ LocationConfig&	LocationConfig::operator=( const LocationConfig& other )
 const std::string&					LocationConfig::getPath( void ) const { return _path; }
 const std::string&					LocationConfig::getRoot( void ) const { return _root; }
 const std::vector<std::string>&		LocationConfig::getAllowedMethods( void ) const { return _allowedMethods; }
+const size_t&						LocationConfig::getClientMaxBodySize() const { return _clientMaxBodySize; }
 const std::string&					LocationConfig::getIndex( void ) const { return _index; }
 const bool&							LocationConfig::getAutoIndex( void ) const { return _autoIndex; }
 const std::string&					LocationConfig::getCgiPath( void ) const { return _cgiPath; }
@@ -30,6 +31,7 @@ const std::string&					LocationConfig::getRedirection( void ) const { return _re
 void	LocationConfig::setPath( const std::string& path ) { _path = path; }
 void	LocationConfig::setRoot( const std::string& root ) { _root = root; }
 void	LocationConfig::setAllowedMethods( std::vector<std::string>& allowedMethods ) { _allowedMethods = allowedMethods; }
+void	LocationConfig::setClientMaxBodySize(const size_t& clientMaxBodySize) { _clientMaxBodySize = clientMaxBodySize; }
 void	LocationConfig::setIndex( const std::string& index ) { _index = index; }
 void	LocationConfig::setAutoIndex( const bool& autoIndex ) { _autoIndex = autoIndex; }
 void	LocationConfig::setCgiPath( const std::string& cgiPath ) { _cgiPath = cgiPath; }
@@ -60,6 +62,48 @@ void	LocationConfig::_addCgiExtention( const std::string& cgiExtention )
 }
 
 /**
+ * @brief Converts a size string (e.g., "1M") to an integer in bytes.
+ * 
+ * Supports:
+ *  - "1024"  →  1024 bytes
+ *  - "1K"    →  1024 bytes
+ *  - "1M"    →  1,048,576 bytes
+ * 
+ * @param sizeStr The input size string.
+ * @return size_t The size in bytes.
+ */
+size_t LocationConfig::_parseSize(const std::string& sizeStr)
+{
+	if (sizeStr.empty())
+		throw ConfigException("client_max_body_size: Invalid size (empty value).");
+	
+	std::string trimmedStr = StringUtils::trim(sizeStr, " \t;");
+	size_t multiplier = 1;
+	std::string numPart = trimmedStr;
+
+	char lastChar = trimmedStr[trimmedStr.size() - 1];
+	if (lastChar == 'K' || lastChar == 'k')
+	{
+		multiplier = 1024;
+		numPart = trimmedStr.substr(0, trimmedStr.size() - 1);
+	}
+	else if (lastChar == 'M' || lastChar == 'm')
+	{
+		multiplier = 1024 * 1024;
+		numPart = trimmedStr.substr(0, trimmedStr.size() - 1);
+	}
+
+	char* endPtr;
+	long result = strtol(numPart.c_str(), &endPtr, 10);
+
+	// Validate conversion
+	if (*endPtr != '\0' || result < 0)
+		throw ConfigException("client_max_body_size: Invalid number format '" + trimmedStr + "'.");
+
+	return static_cast<size_t>(result) * multiplier;
+}
+
+/**
  * @brief parser method to get all location-info from .conf file
  */
 void LocationConfig::parseLocationBlock(std::ifstream& file)
@@ -85,6 +129,11 @@ void LocationConfig::parseLocationBlock(std::ifstream& file)
 			std::string value = StringUtils::extractDirectiveValue(line, key);
 			std::vector<std::string> methods = StringUtils::split(value, ' ');
 			setAllowedMethods(methods);
+		}
+		else if (key == "client_max_body_size")
+		{
+			std::string value = StringUtils::extractDirectiveValue(line, key);
+			setClientMaxBodySize(_parseSize(value));
 		}
 		else if (key == "index")
 		{
@@ -140,6 +189,7 @@ std::ostream&	operator<<( std::ostream& os, const LocationConfig& location )
 		os << *it << " ";
 	os << std::endl;
 
+	os << "                    Client Max Body Size: " << location.getClientMaxBodySize() << " bytes" << std::endl;
 	os << "                    Index: " << location.getIndex() << std::endl;
 	os << "                    AutoIndex: " << location.getAutoIndex() << std::endl;
 	os << "                    CGI Path: " << location.getCgiPath() << std::endl;

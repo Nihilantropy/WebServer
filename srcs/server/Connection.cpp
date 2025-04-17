@@ -796,6 +796,35 @@ bool Connection::_prepareUploadDirectory(const std::string& uploadDir)
 }
 
 /**
+ * @brief Determine the effective client max body size for the current request
+ * 
+ * This checks the location config first, then falls back to server config if needed.
+ * 
+ * @param requestPath The request path to find matching location for
+ * @return size_t The effective max body size (0 means unlimited)
+ */
+size_t Connection::_getEffectiveMaxBodySize(const std::string& requestPath)
+{
+    // Find the location for this request path
+    LocationConfig* location = _findLocation(requestPath);
+    
+    if (!location) {
+        // If no location matches, use server default
+        return _serverConfig->getClientMaxBodySize();
+    }
+    
+    // Get location value
+    size_t maxBodySize = location->getClientMaxBodySize();
+    
+    // If using default, fall back to server value
+    if (maxBodySize == DEFAULT_CLIENT_SIZE) {
+        maxBodySize = _serverConfig->getClientMaxBodySize();
+    }
+    
+    return maxBodySize;
+}
+
+/**
  * @brief Handle file upload from POST request
  * 
  * @param location The location configuration for the request
@@ -813,10 +842,19 @@ bool Connection::_handleFileUpload(const LocationConfig& location)
         return false;
     }
     
-    // Check if client body size exceeds server limit
-    if (_request.getBody().size() > _serverConfig->getClientMaxBodySize()) {
-        _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
-        return false;
+    // Use location client max body size first
+    size_t  client_max_body_size = location.getClientMaxBodySize();
+
+    // if not set, fallback to the server client max body size
+    if (client_max_body_size == DEFAULT_CLIENT_SIZE)
+        client_max_body_size = _serverConfig->getClientMaxBodySize();
+
+    // if client_max_body_size is not set to 0 (unlimited) we check if the request body exceedes the limit
+    if (client_max_body_size != 0) {
+        if (_request.getBody().size() > client_max_body_size) {
+            _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
+            return false;    
+        }
     }
     
     // Parse the multipart form data
@@ -892,10 +930,19 @@ bool Connection::_handleFileUpload(const LocationConfig& location)
             continue;
         }
         
-        // Validate file size (individual file check)
-        if (files[i].content.size() > _serverConfig->getClientMaxBodySize()) {
+        // Get the appropriate client_max_body_size value for this location
+        size_t client_max_body_size = location.getClientMaxBodySize();
+
+        // If not set at the location level, fall back to server's value
+        if (client_max_body_size == DEFAULT_CLIENT_SIZE)
+            client_max_body_size = _serverConfig->getClientMaxBodySize();
+
+        // Check file size if a limit is set (non-zero)
+        if (client_max_body_size != 0 && files[i].content.size() > client_max_body_size) {
             responseBody << "    <li>\r\n"
-                        << "      <strong>Error:</strong> File too large: " << originalFilename << "<br>\r\n"
+                        << "      <strong>Error:</strong> File too large: " << originalFilename << " (" 
+                        << FileUtils::formatFileSize(files[i].content.size()) << " exceeds limit of "
+                        << FileUtils::formatFileSize(client_max_body_size) << ")<br>\r\n"
                         << "    </li>\r\n";
             continue;
         }

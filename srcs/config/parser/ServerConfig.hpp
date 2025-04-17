@@ -13,6 +13,8 @@
 
 class LocationConfig;
 
+#define NONE_CLIENT_SIZE static_cast<size_t>(-1)    // No size limit (set default limit)
+
 /**
  * @brief class to store server specific info
  */

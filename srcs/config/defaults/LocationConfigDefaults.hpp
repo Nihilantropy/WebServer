@@ -22,6 +22,8 @@ private:
      * @param config LocationConfig object to set defaults for
      */
     static void _setDefaultAllowedMethods(LocationConfig& config);
+
+    
     
     /**
      * @brief Sets default index file if autoindex is off and no index is defined

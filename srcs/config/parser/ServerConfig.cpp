@@ -1,7 +1,7 @@
 #include "ServerConfig.hpp"
 
 ServerConfig::ServerConfig()
-	: _host(), _port(0), _serverNames(), _clientMaxBodySize(0), _errorPages(), _locations() {}
+	: _host(), _port(0), _serverNames(), _clientMaxBodySize(NONE_CLIENT_SIZE), _errorPages(), _locations() {}
 
 ServerConfig::~ServerConfig()
 {

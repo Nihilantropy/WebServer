@@ -1,22 +1,22 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>File Upload Test</title>
-</head>
-<body>
-    <h1>File Upload Test</h1>
-    <form action="/uploads/" method="post" enctype="multipart/form-data">
-        <div>
-            <label for="file">Choose files to upload:</label>
-            <input type="file" id="file" name="file" multiple>
-        </div>
-        <div>
-            <label for="description">Description:</label>
-            <input type="text" id="description" name="description">
-        </div>
-        <div>
-            <button type="submit">Upload</button>
-        </div>
-    </form>
-</body>
+    <head>
+        <title>File Upload Test</title>
+    </head>
+    <body>
+        <h1>File Upload Test</h1>
+        <form action="/uploads/" method="post" enctype="multipart/form-data">
+            <div>
+                <label for="file">Choose files to upload:</label>
+                <input type="file" id="file" name="file" multiple />
+            </div>
+            <div>
+                <label for="description">Description:</label>
+                <input type="text" id="description" name="description" />
+            </div>
+            <div>
+                <button type="submit">Upload</button>
+            </div>
+        </form>
+    </body>
 </html>

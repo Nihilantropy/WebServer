@@ -4,3 +4,7 @@ location /cgi-bin/ {
 }
 
 This will use differetn interpreter for different file extentions
+
+Refactor host:port parsing and connection listening to allow multiple port for the same server
+
+Work on the clien max body size implementation to better refuse incompatible body sizes
