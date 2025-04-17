@@ -153,13 +153,44 @@ private:
     Connection(const Connection& other);
     Connection& operator=(const Connection& other);
     
-    // Helper methods
-    void        _updateLastActivity();
-    void        _processRequest();
-    void        _handleStaticFile();
-    size_t      _getEffectiveMaxBodySize(const std::string& requestPath);
-    void        _handleDefault();
-    void        _handleError(int statusCode);
+    // Helper methods for activity and state
+    void _updateLastActivity();
+    
+    // Read operation helper methods
+    bool _isValidStateForReading() const;
+    ssize_t _readFromSocket();
+    void _logReadOperation(ssize_t bytesRead, const char* buffer);
+    bool _handleConnectionClosed();
+    bool _handleSocketError();
+    void _processReadData(ssize_t bytesRead);
+    
+    // Header processing helper methods
+    void _processHeaderData();
+    void _logHeaderInfo();
+    void _handle100Continue();
+    void _handleBodyAfterHeaders();
+    void _attemptImmediateBodyParse();
+    
+    // Body processing helper methods
+    void _processBodyData();
+    void _logBodyParseStart();
+    void _logBodyParseResult(bool parseResult);
+    void _logBodyParseIncomplete();
+    
+    // Error and method handling
+    void _handleUnknownMethod();
+    
+    // State transition methods
+    void _transitionToProcessing();
+    void _transitionToReadingBody();
+    void _transitionToSendingResponse();
+    
+    // Request processing methods
+    void _processRequest();
+    void _handleStaticFile();
+    size_t _getEffectiveMaxBodySize(const std::string& requestPath);
+    void _handleDefault();
+    void _handleError(int statusCode);
     std::string _getErrorPage(int statusCode);
 
     // File handling methods
@@ -174,36 +205,9 @@ private:
     void _handleDeleteRequest();
     bool _handleFileUpload(const LocationConfig& location);
     
-    /**
-     * @brief Prepare the upload directory for file storage
-     * 
-     * @param uploadDir Path to the upload directory
-     * @return true if directory exists and is writable, false otherwise
-     */
+    // File upload helper methods
     bool _prepareUploadDirectory(const std::string& uploadDir);
-
-    /**
-     * @brief Sanitize a filename to make it safe for storage
-     * 
-     * @param filename Original filename from the upload
-     * @return std::string Sanitized filename
-     */
     std::string _sanitizeFilename(const std::string& filename);
-    
-    /**
-     * @brief Generate a unique filename to avoid overwriting existing files
-     * 
-     * @param directory Directory where the file will be stored
-     * @param filename Sanitized filename
-     * @return std::string Unique filename
-     */
     std::string _getUniqueFilename(const std::string& directory, const std::string& filename);
-     
-    /**
-     * @brief Check if a file type is allowed based on extension
-     * 
-     * @param filename Filename to check
-     * @return bool True if the file type is allowed
-     */
     bool _isAllowedFileType(const std::string& filename);
 };
