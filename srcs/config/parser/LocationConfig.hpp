@@ -5,6 +5,7 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
+#include <cstdlib>
 #include "../../exceptions/exceptions.hpp"
 #include "../../utils/StringUtils.hpp"
 

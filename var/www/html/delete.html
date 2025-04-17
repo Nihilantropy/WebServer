@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>File Deletion Tool</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            h1 {
+                color: #333;
+                border-bottom: 1px solid #ccc;
+                padding-bottom: 10px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+            }
+            th, td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #f2f2f2;
+            }
+            tr:nth-child(even) {
+                background-color: #f9f9f9;
+            }
+            tr:hover {
+                background-color: #f1f1f1;
+            }
+            .delete-btn {
+                background-color: #ff4d4d;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            .delete-btn:hover {
+                background-color: #ff0000;
+            }
+            #message {
+                padding: 10px;
+                margin: 10px 0;
+                border-radius: 4px;
+                display: none;
+            }
+            .success {
+                background-color: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+            }
+            .error {
+                background-color: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>File Deletion Tool</h1>
+        
+        <p>This page displays files from the upload directory. Select a file to delete it.</p>
+        
+        <div id="message"></div>
+        
+        <div id="file-list">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="files-table-body">
+                    <!-- File list will be loaded here -->
+                    <tr>
+                        <td colspan="4">Loading files...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <p><a href="/upload/">Go to Upload Page</a></p>
+        
+        <script>
+            // Function to load file list
+            function loadFiles() {
+                fetch('/uploads/')
+                    .then(response => response.text())
+                    .then(html => {
+                        // Parse the HTML to extract file information
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const tableRows = doc.querySelectorAll('table tr');
+                        
+                        // Clear the loading message
+                        document.getElementById('files-table-body').innerHTML = '';
+                        
+                        // Skip the header row (index 0)
+                        let foundFiles = false;
+                        for (let i = 1; i < tableRows.length; i++) {
+                            const cells = tableRows[i].querySelectorAll('td');
+                            if (cells.length >= 3) {
+                                foundFiles = true;
+                                // Get file info from the directory listing
+                                const fileLink = cells[0].querySelector('a');
+                                if (fileLink) {
+                                    const fileName = fileLink.textContent;
+                                    // Skip parent directory link
+                                    if (fileName === 'Parent Directory') continue;
+                                    
+                                    const fileHref = fileLink.getAttribute('href');
+                                    const fileSize = cells[2].textContent;
+                                    
+                                    // Create table row for this file
+                                    addFileToTable(fileName, fileHref, fileSize);
+                                }
+                            }
+                        }
+                        
+                        if (!foundFiles) {
+                            document.getElementById('files-table-body').innerHTML = 
+                                '<tr><td colspan="4">No files found in the upload directory.</td></tr>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading file list:', error);
+                        document.getElementById('files-table-body').innerHTML = 
+                            '<tr><td colspan="4">Error loading files. Directory listing may be disabled.</td></tr>';
+                    });
+            }
+            
+            // Function to add a file to the table
+            function addFileToTable(fileName, fileHref, fileSize) {
+                const tbody = document.getElementById('files-table-body');
+                const row = document.createElement('tr');
+                
+                // Determine file type from extension
+                const fileExt = fileName.split('.').pop().toLowerCase();
+                let fileType = 'Unknown';
+                
+                if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileExt)) {
+                    fileType = 'Image';
+                } else if (['txt', 'log', 'md'].includes(fileExt)) {
+                    fileType = 'Text';
+                } else if (['pdf'].includes(fileExt)) {
+                    fileType = 'PDF';
+                } else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(fileExt)) {
+                    fileType = 'Office Document';
+                } else if (['zip', 'rar', 'tar', 'gz', '7z'].includes(fileExt)) {
+                    fileType = 'Archive';
+                }
+                
+                // Build the row
+                row.innerHTML = `
+                    <td><a href="/uploads/${fileName}" target="_blank">${fileName}</a></td>
+                    <td>${fileType}</td>
+                    <td>${fileSize}</td>
+                    <td>
+                        <button class="delete-btn" data-file="${fileName}">Delete</button>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+                
+                // Add event listener to the delete button
+                const deleteBtn = row.querySelector('.delete-btn');
+                deleteBtn.addEventListener('click', function() {
+                    deleteFile(this.getAttribute('data-file'));
+                });
+            }
+            
+            // Function to delete a file
+            function deleteFile(fileName) {
+                if (confirm(`Are you sure you want to delete ${fileName}?`)) {
+                    // Send DELETE request to the server
+                    fetch(`/uploads/${fileName}`, {
+                        method: 'DELETE'
+                    })
+                    .then(response => {
+                        if (response.ok || response.status === 204) {
+                            showMessage(`File ${fileName} has been deleted successfully.`, 'success');
+                            // Reload the file list
+                            setTimeout(loadFiles, 1000);
+                        } else {
+                            response.text().then(text => {
+                                showMessage(`Error deleting file: ${text}`, 'error');
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        showMessage(`Error deleting file: ${error.message}`, 'error');
+                    });
+                }
+            }
+            
+            // Function to show messages
+            function showMessage(text, type) {
+                const messageDiv = document.getElementById('message');
+                messageDiv.textContent = text;
+                messageDiv.className = type;
+                messageDiv.style.display = 'block';
+                
+                // Hide the message after 5 seconds
+                setTimeout(() => {
+                    messageDiv.style.display = 'none';
+                }, 5000);
+            }
+            
+            // Load files when the page loads
+            document.addEventListener('DOMContentLoaded', loadFiles);
+        </script>
+    </body>
+</html>

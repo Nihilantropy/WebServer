@@ -1,8 +1,10 @@
 #include "LocationConfig.hpp"
 
 LocationConfig::LocationConfig()
-	: _path(), _root(), _allowedMethods(), _index(),
-		_autoIndex(false), _cgiPath(), _cgiExtentions(), _uploadDir(), _redirection(), _clientMaxBodySize(DEFAULT_CLIENT_SIZE) {}
+    : _path(), _root(), _allowedMethods(), _clientMaxBodySize(DEFAULT_CLIENT_SIZE), 
+      _index(), _autoIndex(false), _cgiPath(), _cgiExtentions(), _uploadDir(), _redirection()
+{
+}
 
 LocationConfig::~LocationConfig() {}
 

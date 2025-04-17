@@ -129,6 +129,8 @@ bool Connection::_handleSocketError()
 
 void Connection::_processReadData(ssize_t bytesRead)
 {
+    (void)bytesRead;
+
     if (_state == READING_HEADERS) {
         _processHeaderData();
     } else if (_state == READING_BODY) {
