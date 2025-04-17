@@ -1,5 +1,5 @@
 #!/bin/sh
 
-echo "Sei stato hackerato!"
+echo "You've been hacked!"
 
 tail -f

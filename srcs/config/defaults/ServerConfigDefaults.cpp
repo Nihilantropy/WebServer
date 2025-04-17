@@ -14,28 +14,28 @@ void ServerConfigDefaults::_setDefaultErrorPages(ServerConfig& config)
     
     // Define default error pages if not already defined
     if (errorPages.find(404) == errorPages.end()) {
-        errorPages[404] = "/errors/404.html";
+        errorPages[404] = "./var/www/html/errors/404.html";
     }
     
     if (errorPages.find(500) == errorPages.end()) {
-        errorPages[500] = "/errors/500.html";
+        errorPages[500] = "./var/www/html/errors/500.html";
     }
     
     // Add other common error pages
     if (errorPages.find(400) == errorPages.end()) {
-        errorPages[400] = "/errors/400.html";
+        errorPages[400] = "./var/www/html/errors/400.html";
     }
     
     if (errorPages.find(403) == errorPages.end()) {
-        errorPages[403] = "/errors/403.html";
+        errorPages[403] = "./var/www/html/errors/403.html";
     }
     
     if (errorPages.find(405) == errorPages.end()) {
-        errorPages[405] = "/errors/405.html";
+        errorPages[405] = "./var/www/html/errors/405.html";
     }
     
     if (errorPages.find(413) == errorPages.end()) {
-        errorPages[413] = "/errors/413.html";
+        errorPages[413] = "./var/www/html/errors/413.html";
     }
     
     config.setErrorPages(errorPages);

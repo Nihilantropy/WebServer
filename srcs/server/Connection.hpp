@@ -184,14 +184,38 @@ private:
     void _transitionToProcessing();
     void _transitionToReadingBody();
     void _transitionToSendingResponse();
-    
-    // Request processing methods
+
+    // Process request helper methods
+    bool _isValidStateForProcessing() const;
+    void _logProcessingStart();
+    void _prepareNewResponse();
+    void _handleProcessingException(const std::exception& e);
+    void _buildAndPrepareResponse();
+    void _logResponseDetails();
     void _processRequest();
+    LocationConfig* _findAndValidateLocation();
+    bool _validateRequestMethod(const LocationConfig& location);
+    void _logAllowedMethods(const std::vector<std::string>& allowedMethods);
+    bool _checkForRedirection(const LocationConfig& location);
+    void _routeRequestByMethod();
+
+    // Request processing methods
     void _handleStaticFile();
     size_t _getEffectiveMaxBodySize(const std::string& requestPath);
     void _handleDefault();
     void _handleError(int statusCode);
     std::string _getErrorPage(int statusCode);
+
+    // Write operation helper methods
+    bool _isValidStateForWriting() const;
+    ssize_t _writeToSocket();
+    bool _handleSuccessfulWrite(ssize_t bytesWritten);
+    void _logWriteOperation(ssize_t bytesWritten);
+    void _handleWriteComplete();
+    void _prepareForNextRequest();
+    void _closeAfterResponse();
+    bool _handleWriteSocketClosure();
+    bool _handleWriteSocketError();
 
     // File handling methods
     LocationConfig* _findLocation(const std::string& requestPath);

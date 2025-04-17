@@ -35,6 +35,7 @@ void Connection::_updateLastActivity()
     _lastActivity = time(NULL);
 }
 
+/*** READ & PROCESS REQUESTS DATA ***/
 bool Connection::readData()
 {
     if (!_isValidStateForReading())
@@ -146,6 +147,17 @@ void Connection::_processHeaderData()
         
         // Log important headers
         _logHeaderInfo();
+
+        // Get Content-Length and check against client_max_body_size limit
+        size_t contentLength = _request.getHeaders().getContentLength();
+        if (contentLength > 0) {
+            size_t maxBodySize = _getEffectiveMaxBodySize(_request.getPath());
+            if (maxBodySize > 0 && contentLength > maxBodySize) {
+                DebugLogger::logError("Content-Length exceeds client_max_body_size limit");
+                _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
+                return;
+            }
+        }
         
         // Check for Expect: 100-continue header
         if (_request.getHeaders().get("expect") == "100-continue") {
@@ -211,6 +223,16 @@ void Connection::_attemptImmediateBodyParse()
     std::stringstream bufLog;
     bufLog << "Buffer size after header parsing: " << _inputBuffer.size();
     DebugLogger::log(bufLog.str());
+
+    // Check the content length against the limit
+    size_t contentLength = _request.getHeaders().getContentLength();
+    size_t maxBodySize = _getEffectiveMaxBodySize(_request.getPath());
+    
+    if (maxBodySize > 0 && contentLength > maxBodySize) {
+        DebugLogger::logError("Content-Length exceeds client_max_body_size limit");
+        _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
+        return;
+    }
     
     // Try parsing body right away
     bool parseResult = _request.parseBody(_inputBuffer);
@@ -233,6 +255,17 @@ void Connection::_attemptImmediateBodyParse()
 void Connection::_processBodyData()
 {
     DebugLogger::log("Parsing body...");
+
+    // Check current body size before processing more
+    const std::string& currentBody = _request.getBody();
+    size_t maxBodySize = _getEffectiveMaxBodySize(_request.getPath());
+    
+    // Only perform check if a limit is set (non-zero)
+    if (maxBodySize > 0 && currentBody.size() > maxBodySize) {
+        DebugLogger::logError("Request body exceeds client_max_body_size limit");
+        _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
+        return;
+    }
     
     _logBodyParseStart();
     
@@ -240,6 +273,13 @@ void Connection::_processBodyData()
     
     _logBodyParseResult(parseResult);
     
+    // Check again after parsing in case we just exceeded the limit
+    if (parseResult && maxBodySize > 0 && _request.getBody().size() > maxBodySize) {
+        DebugLogger::logError("Request body exceeds client_max_body_size limit after parsing");
+        _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
+        return;
+    }
+
     if (parseResult) {
         _transitionToProcessing();
     } else {
@@ -285,10 +325,6 @@ void Connection::_handleUnknownMethod()
     
     // Handle the 405 error
     _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
-    
-    // Build the response and transition to sending state
-    _outputBuffer = _response.build();
-    _transitionToSendingResponse();
 }
 
 void Connection::_transitionToProcessing()
@@ -313,7 +349,25 @@ void Connection::_transitionToSendingResponse()
     _state = SENDING_RESPONSE;
 }
 
+
+/*** WRITE & PROCESS RESPONSE ***/
 bool Connection::writeData()
+{
+    if (!_isValidStateForWriting())
+        return _state != CLOSED;
+        
+    ssize_t bytesWritten = _writeToSocket();
+    
+    if (bytesWritten > 0) {
+        return _handleSuccessfulWrite(bytesWritten);
+    } else if (bytesWritten == 0) {
+        return _handleWriteSocketClosure();
+    } else {
+        return _handleWriteSocketError();
+    }
+}
+
+bool Connection::_isValidStateForWriting() const
 {
     if (_state == CLOSED) {
         DebugLogger::log("Connection is closed, not writing");
@@ -324,180 +378,271 @@ bool Connection::writeData()
     if (_state != SENDING_RESPONSE || _outputBuffer.empty()) {
         std::stringstream ss;
         ss << _state;
-        std::stringstream ss2;
-        ss2 << _outputBuffer.size();
-        DebugLogger::log("Not in writing state or buffer empty, state: " + ss.str() + 
-                      ", buffer size: " + ss2.str());
-        return true;
+        ss << ", buffer size: " << _outputBuffer.size();
+        DebugLogger::log("Not in writing state or buffer empty, state: " + ss.str());
+        return false;
     }
     
     std::stringstream ss;
     ss << _outputBuffer.size();
     DebugLogger::log("Writing response data, buffer size: " + ss.str());
+    return true;
+}
+
+ssize_t Connection::_writeToSocket()
+{
+    return send(_clientFd, _outputBuffer.c_str(), _outputBuffer.size(), 0);
+}
+
+bool Connection::_handleSuccessfulWrite(ssize_t bytesWritten)
+{
+    _updateLastActivity();
     
-    ssize_t bytesWritten = send(_clientFd, _outputBuffer.c_str(), _outputBuffer.size(), 0);
+    _logWriteOperation(bytesWritten);
     
-    if (bytesWritten > 0) {
-        _updateLastActivity();
-        
-        std::cout << "Wrote " << bytesWritten << " bytes to " << _clientIp << std::endl;
-        
-        std::stringstream bwStr;
-        bwStr << bytesWritten;
-        DebugLogger::log("Wrote " + bwStr.str() + " bytes to client");
-        
-        // Remove sent data from buffer
-        _outputBuffer.erase(0, bytesWritten);
-        
-        std::stringstream remStr;
-        remStr << _outputBuffer.size();
-        DebugLogger::log("Remaining output buffer size: " + remStr.str());
-        
-        // If all data sent, move to next state
-        if (_outputBuffer.empty()) {
-            // Mark the response as sent
-            _response.markAsSent();
-            DebugLogger::log("Response fully sent");
-            
-            // Check connection header
-            bool keepAlive = _request.getHeaders().keepAlive(true);
-            DebugLogger::log("Keep-alive: " + std::string(keepAlive ? "yes" : "no"));
-            
-            if (keepAlive) {
-                // Reset for the next request
-                DebugLogger::log("Keeping connection alive, resetting for next request");
-                _request.reset();
-                _state = READING_HEADERS;
-                _inputBuffer.clear();
-            } else {
-                // Close connection after response
-                DebugLogger::log("Not keep-alive, closing connection");
-                _state = CLOSED;
-            }
-        }
-        
-        return true;
-    } else if (bytesWritten == 0) {
-        // Socket closed
-        std::cout << "Connection closed during write: " << _clientIp << std::endl;
-        DebugLogger::logError("Connection closed by client during write");
-        _state = CLOSED;
-        return false;
+    // Remove sent data from buffer
+    _outputBuffer.erase(0, bytesWritten);
+    
+    // If all data sent, move to next state
+    if (_outputBuffer.empty()) {
+        _handleWriteComplete();
+    }
+    
+    return true;
+}
+
+void Connection::_logWriteOperation(ssize_t bytesWritten)
+{
+    std::cout << "Wrote " << bytesWritten << " bytes to " << _clientIp << std::endl;
+    
+    std::stringstream ss;
+    ss << bytesWritten << " bytes to client, remaining: " << _outputBuffer.size();
+    DebugLogger::log("Wrote " + ss.str());
+}
+
+void Connection::_handleWriteComplete()
+{
+    // Mark the response as sent
+    _response.markAsSent();
+    DebugLogger::log("Response fully sent");
+    
+    // Check connection header
+    bool keepAlive = _request.getHeaders().keepAlive(true);
+    DebugLogger::log("Keep-alive: " + std::string(keepAlive ? "yes" : "no"));
+    
+    if (keepAlive) {
+        _prepareForNextRequest();
     } else {
-        // Error or would block
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            // Socket buffer full, try again later
-            DebugLogger::log("Write would block (EAGAIN/EWOULDBLOCK), trying again later");
-            return true;
-        } else {
-            // Error
-            std::cerr << "Error writing to socket " << _clientFd << ": " << strerror(errno) << std::endl;
-            DebugLogger::logError("Socket write error: " + std::string(strerror(errno)));
-            _state = CLOSED;
-            return false;
-        }
+        _closeAfterResponse();
     }
 }
 
+void Connection::_prepareForNextRequest()
+{
+    DebugLogger::log("Keeping connection alive, resetting for next request");
+    _request.reset();
+    _state = READING_HEADERS;
+    _inputBuffer.clear();
+}
+
+void Connection::_closeAfterResponse()
+{
+    DebugLogger::log("Not keep-alive, closing connection");
+    _state = CLOSED;
+}
+
+bool Connection::_handleWriteSocketClosure()
+{
+    std::cout << "Connection closed during write: " << _clientIp << std::endl;
+    DebugLogger::logError("Connection closed by client during write");
+    _state = CLOSED;
+    return false;
+}
+
+bool Connection::_handleWriteSocketError()
+{
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        // Socket buffer full, try again later
+        DebugLogger::log("Write would block (EAGAIN/EWOULDBLOCK), trying again later");
+        return true;
+    } else {
+        // Error
+        std::cerr << "Error writing to socket " << _clientFd << ": " << strerror(errno) << std::endl;
+        DebugLogger::logError("Socket write error: " + std::string(strerror(errno)));
+        _state = CLOSED;
+        return false;
+    }
+}
+
+/*** PROCESS OPERATIONS ***/
 void Connection::process()
+{
+    if (!_isValidStateForProcessing())
+        return;
+    
+    _logProcessingStart();
+    _prepareNewResponse();
+    
+    try {
+        _processRequest();
+    } catch (const std::exception& e) {
+        _handleProcessingException(e);
+    }
+    
+    _buildAndPrepareResponse();
+}
+
+bool Connection::_isValidStateForProcessing() const
 {
     if (_state != PROCESSING) {
         std::stringstream ss;
         ss << _state;
         DebugLogger::log("process() called but state is not PROCESSING, current state: " + ss.str());
-        return;
+        return false;
     }
-    
+    return true;
+}
+
+void Connection::_logProcessingStart()
+{
     std::cout << "Processing " << _request.getMethodStr() << " request for " 
               << _request.getPath() << " from " << _clientIp << std::endl;
-    
+}
+
+void Connection::_prepareNewResponse()
+{
     // Create a new response for this request
     _response = Response();
-    
-    try {
-        // Process the request and generate a response
-        _processRequest();
-    } catch (const std::exception& e) {
-        // Handle any exceptions during processing
-        std::cerr << "Error processing request: " << e.what() << std::endl;
-        DebugLogger::logError("Exception during request processing: " + std::string(e.what()));
-        _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
-    }
-    
+}
+
+void Connection::_handleProcessingException(const std::exception& e)
+{
+    // Handle any exceptions during processing
+    std::cerr << "Error processing request: " << e.what() << std::endl;
+    DebugLogger::logError("Exception during request processing: " + std::string(e.what()));
+    _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+}
+
+void Connection::_buildAndPrepareResponse()
+{
     // Build the response and store in output buffer
     _outputBuffer = _response.build();
     
     // Log the response
+    _logResponseDetails();
+    
+    // Move to sending response state
+    _transitionToSendingResponse();
+}
+
+void Connection::_logResponseDetails()
+{
     DebugLogger::logResponse(_response.getStatusCode(), _response.getHeaders().toString());
     
     std::stringstream ss;
     ss << _response.getBody().size();
     DebugLogger::log("Response body length: " + ss.str());
-    
-    // Move to sending response state
-    _state = SENDING_RESPONSE;
 }
 
 void Connection::_processRequest()
 {
     DebugLogger::log("Processing request: " + _request.getMethodStr() + " " + _request.getPath());
     
-    // Check if method is supported
-    Request::Method method = _request.getMethod();
-
-    std::cout << "Request method is: " << method << std::endl;
+    LocationConfig* location = _findAndValidateLocation();
+    if (!location) {
+        return; // Error already handled
+    }
     
-    // Find the appropriate location for this path
+    if (!_validateRequestMethod(*location)) {
+        return; // Error already handled
+    }
+    
+    if (_checkForRedirection(*location)) {
+        return; // Redirection already handled
+    }
+    
+    _routeRequestByMethod();
+}
+
+LocationConfig* Connection::_findAndValidateLocation()
+{
     LocationConfig* location = _findLocation(_request.getPath());
     if (!location) {
         DebugLogger::logError("No location block found for path: " + _request.getPath());
         _handleError(HTTP_STATUS_NOT_FOUND);
-        return;
+        return NULL;
     }
     
     DebugLogger::log("Found location block: " + location->getPath() + 
-                  " with root: " + location->getRoot());
-    
-    // Check if the requested method is allowed for this location
+                   " with root: " + location->getRoot());
+    return location;
+}
+
+bool Connection::_validateRequestMethod(const LocationConfig& location)
+{
     std::string methodStr = _request.getMethodStr();
-    bool methodAllowed = false;
+    const std::vector<std::string>& allowedMethods = location.getAllowedMethods();
     
-    const std::vector<std::string>& allowedMethods = location->getAllowedMethods();
-    DebugLogger::log("Allowed methods for this location:");
+    _logAllowedMethods(allowedMethods);
+    
     for (std::vector<std::string>::const_iterator it = allowedMethods.begin(); 
          it != allowedMethods.end(); ++it) {
-        DebugLogger::log(" - " + *it);
         if (*it == methodStr) {
-            methodAllowed = true;
+            return true;
         }
     }
     
-    if (!methodAllowed) {
-        DebugLogger::logError("Method " + methodStr + " not allowed for this location");
-        _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
-        return;
+    DebugLogger::logError("Method " + methodStr + " not allowed for this location");
+    _handleError(HTTP_STATUS_METHOD_NOT_ALLOWED);
+    return false;
+}
+
+void Connection::_logAllowedMethods(const std::vector<std::string>& allowedMethods)
+{
+    DebugLogger::log("Allowed methods for this location:");
+    for (std::vector<std::string>::const_iterator it = allowedMethods.begin();
+         it != allowedMethods.end(); ++it) {
+        DebugLogger::log(" - " + *it);
     }
-    
-    // Check if this is a redirection
-    if (!location->getRedirection().empty()) {
-        DebugLogger::log("This location has a redirection: " + location->getRedirection());
-        _handleRedirection(*location);
-        return;
+}
+
+bool Connection::_checkForRedirection(const LocationConfig& location)
+{
+    if (!location.getRedirection().empty()) {
+        DebugLogger::log("This location has a redirection: " + location.getRedirection());
+        _handleRedirection(location);
+        return true;
     }
+    return false;
+}
+
+void Connection::_routeRequestByMethod()
+{
+    Request::Method method = _request.getMethod();
+    std::string methodStr = _request.getMethodStr();
     
-    // Handle the request based on method
-    if (method == Request::GET) {
-        DebugLogger::log("Handling GET request");
-        _handleStaticFile();
-    } else if (method == Request::POST) {
-        DebugLogger::log("Handling POST request");
-        _handlePostRequest();
-    } else if (method == Request::DELETE) {
-        DebugLogger::log("Handling DELETE request");
-        _handleDeleteRequest();
-    } else {
-        DebugLogger::logError("Method implementation missing for " + methodStr);
-        _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+    std::cout << "Request method is: " << method << std::endl;
+    
+    switch (method) {
+        case Request::GET:
+            DebugLogger::log("Handling GET request");
+            _handleStaticFile();
+            break;
+            
+        case Request::POST:
+            DebugLogger::log("Handling POST request");
+            _handlePostRequest();
+            break;
+            
+        case Request::DELETE:
+            DebugLogger::log("Handling DELETE request");
+            _handleDeleteRequest();
+            break;
+            
+        default:
+            DebugLogger::logError("Unexpected error caused by unknown method: " + methodStr);
+            _handleError(HTTP_STATUS_NOT_IMPLEMENTED);
+            break;
     }
 }
 
@@ -922,21 +1067,6 @@ bool Connection::_handleFileUpload(const LocationConfig& location)
         return false;
     }
     
-    // Use location client max body size first
-    size_t  client_max_body_size = location.getClientMaxBodySize();
-
-    // if not set, fallback to the server client max body size
-    if (client_max_body_size == DEFAULT_CLIENT_SIZE)
-        client_max_body_size = _serverConfig->getClientMaxBodySize();
-
-    // if client_max_body_size is not set to 0 (unlimited) we check if the request body exceedes the limit
-    if (client_max_body_size != 0) {
-        if (_request.getBody().size() > client_max_body_size) {
-            _handleError(HTTP_STATUS_PAYLOAD_TOO_LARGE);
-            return false;    
-        }
-    }
-    
     // Parse the multipart form data
     MultipartParser parser(contentType, _request.getBody());
     if (!parser.parse()) {
@@ -1337,6 +1467,18 @@ void Connection::_handleError(int statusCode)
     std::stringstream sizeStr;
     sizeStr << errorContent.size();
     DebugLogger::log("Error page set, content size: " + sizeStr.str());
+    
+    // Build the response and store in output buffer
+    _outputBuffer = _response.build();
+    
+    // Log the response
+    DebugLogger::logResponse(_response.getStatusCode(), _response.getHeaders().toString());
+    
+    // Transition to sending response state
+    _transitionToSendingResponse();
+
+    DebugLogger::log("Error response prepared and ready to send");
+    
 }
 
 std::string Connection::_getErrorPage(int statusCode)
