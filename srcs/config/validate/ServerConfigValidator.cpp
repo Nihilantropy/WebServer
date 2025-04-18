@@ -73,7 +73,7 @@ void ServerConfigValidator::_validateClientMaxBodySize(void) const
 {
     const size_t& clientMaxBodySize = _serverConfig.getClientMaxBodySize();
     
-    // If client max body size is not set (0), it should be set to a default value
+    // If client max body size is not set, it should be set to a default value
     // This could be done in a "normalize" method rather than validation
     // For validation purposes, we just ensure it's not unreasonably large
     
