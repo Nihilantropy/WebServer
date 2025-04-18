@@ -21,7 +21,6 @@ bool FileUtils::isDirectory(const std::string& path)
 
     // Try the path as-is
     if (stat(path.c_str(), &buffer) == 0 && S_ISDIR(buffer.st_mode)) {
-        std::cout << "EVVIVA isDir as is\n";
         return true;
     }
     
@@ -42,7 +41,6 @@ bool FileUtils::isDirectory(const std::string& path)
         }
     }
     
-    std::cout << "EVVIVA! no Directory\n";
     return false;
 }
 

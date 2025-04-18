@@ -19,7 +19,6 @@ bool Request::parse(std::string& buffer)
 {
     if (!_headersParsed) {
         if (!parseHeaders(buffer)) {
-            std::cout << "EVVIVA parse!\n";
             return false;
         }
     }

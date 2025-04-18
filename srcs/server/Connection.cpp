@@ -652,7 +652,6 @@ bool Connection::_needsTrailingSlashRedirect(const std::string& fsPath, const st
     if (requestPath.empty() || requestPath[requestPath.length() - 1] != '/') {
         // Check if it's a directory
         
-        std::cout << "EVVIVA _needsTrailingSlashRedirect\n";
         return FileUtils::isDirectory(fsPath);
     }
     return false;
@@ -763,8 +762,7 @@ void Connection::_handleDefault()
     _response.setBody(responseBody, "text/html");
 }
 
-LocationConfig* Connection::_findLocation(const std::string& requestPath)
-{
+LocationConfig* Connection::_findLocation(const std::string& requestPath) {
     DebugLogger::log("Finding location for path: " + requestPath);
     
     const std::vector<LocationConfig*>& locations = _serverConfig->getLocations();
@@ -798,29 +796,54 @@ LocationConfig* Connection::_findLocation(const std::string& requestPath)
             continue; // Skip the rest of the loop for root location
         }
         
-        // Check if location path is a prefix of the request path
-        if (requestPath.find(locationPath) == 0) {
-            // For non-root locations, verify it's a proper segment match
-            size_t locPathLen = locationPath.length();
-            
-            // If request path matches exactly OR
-            // If location ends with '/' (directory) OR 
-            // If next character in request path is '/' (path boundary)
-            if (requestPath.length() == locPathLen || 
-                locationPath[locPathLen-1] == '/' || 
-                (requestPath.length() > locPathLen && requestPath[locPathLen] == '/')) {
-                
-                // Check if this location is a better match than the current best
-                if (locPathLen > bestMatchLength) {
-                    bestMatch = *it;
-                    bestMatchLength = locPathLen;
-                    
-                    std::stringstream ss;
-                    ss << locPathLen;
-                    DebugLogger::log("New best match: '" + locationPath + 
-                                  "' (length: " + ss.str() + ")");
-                }
+        bool isMatch = false;
+        size_t matchLength = 0;
+        
+        // CASE 1: Location with trailing slash (directory)
+        if (locationPath.length() > 0 && locationPath[locationPath.length() - 1] == '/') {
+            // Case 1A: Request matches exactly with location without trailing slash
+            // e.g., location "/uploads/" and request "/uploads"
+            std::string locationNoSlash = locationPath.substr(0, locationPath.length() - 1);
+            if (requestPath == locationNoSlash) {
+                isMatch = true;
+                matchLength = locationPath.length(); // Use full length for prioritization
+                DebugLogger::log("Match: Request matches location without trailing slash");
             }
+            // Case 1B: Request starts with location (including slash)
+            // e.g., location "/uploads/" and request "/uploads/file.txt"
+            else if (requestPath.find(locationPath) == 0) {
+                isMatch = true;
+                matchLength = locationPath.length();
+                DebugLogger::log("Match: Request starts with location (including slash)");
+            }
+        }
+        // CASE 2: Location without trailing slash
+        else {
+            // Case 2A: Exact match
+            // e.g., location "/upload" and request "/upload"
+            if (requestPath == locationPath) {
+                isMatch = true;
+                matchLength = locationPath.length();
+                DebugLogger::log("Match: Request exactly matches location");
+            }
+            // Case 2B: Request starts with location followed by a slash
+            // e.g., location "/upload" and request "/upload/file.txt"
+            else if (requestPath.find(locationPath) == 0 && 
+                     requestPath.length() > locationPath.length() && 
+                     requestPath[locationPath.length()] == '/') {
+                isMatch = true;
+                matchLength = locationPath.length();
+                DebugLogger::log("Match: Request starts with location followed by slash");
+            }
+        }
+        
+        if (isMatch && matchLength > bestMatchLength) {
+            bestMatch = *it;
+            bestMatchLength = matchLength;
+            
+            std::stringstream ss;
+            ss << matchLength;
+            DebugLogger::log("New best match: '" + locationPath + "' (length: " + ss.str() + ")");
         }
     }
     
