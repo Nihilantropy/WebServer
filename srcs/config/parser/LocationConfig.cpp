@@ -2,7 +2,7 @@
 
 LocationConfig::LocationConfig()
     : _path(), _root(), _allowedMethods(), _clientMaxBodySize(DEFAULT_CLIENT_SIZE), 
-      _index(), _autoIndex(false), _cgiPath(), _cgiExtentions(), _uploadDir(), _redirection()
+      _index(), _autoIndex(false), _cgiPath(), _cgiExtentions(), _cgiHandlers(), _uploadDir(), _redirection()
 {
 }
 
@@ -26,6 +26,7 @@ const std::string&					LocationConfig::getIndex( void ) const { return _index; }
 const bool&							LocationConfig::getAutoIndex( void ) const { return _autoIndex; }
 const std::string&					LocationConfig::getCgiPath( void ) const { return _cgiPath; }
 const std::vector<std::string>&		LocationConfig::getCgiExtentions( void ) const { return _cgiExtentions; }
+const std::map<std::string, std::string>& LocationConfig::getCgiHandlers( void ) const { return _cgiHandlers; }
 const std::string&					LocationConfig::getUploadDir( void ) const { return _uploadDir; }
 const std::string&					LocationConfig::getRedirection( void ) const { return _redirection; }
 
@@ -38,6 +39,7 @@ void	LocationConfig::setIndex( const std::string& index ) { _index = index; }
 void	LocationConfig::setAutoIndex( const bool& autoIndex ) { _autoIndex = autoIndex; }
 void	LocationConfig::setCgiPath( const std::string& cgiPath ) { _cgiPath = cgiPath; }
 void	LocationConfig::setCgiExtentions( std::vector<std::string>& cgiExtentions ) { _cgiExtentions = cgiExtentions; }
+void	LocationConfig::setCgiHandlers( std::map<std::string, std::string>& cgiHandlers ) { _cgiHandlers = cgiHandlers; }
 void	LocationConfig::setUploadDir( const std::string& uploadDir ) { _uploadDir = uploadDir; }
 void	LocationConfig::setRedirection( const std::string& redirection ) { _redirection = redirection; }
 
@@ -61,6 +63,82 @@ void	LocationConfig::_addAllowedMethod( const std::string& allowedMethod )
 void	LocationConfig::_addCgiExtention( const std::string& cgiExtention )
 {
 	_cgiExtentions.push_back(cgiExtention);
+}
+
+/**
+ * @brief Add a CGI handler mapping for a specific extension
+ * 
+ * @param extension File extension (e.g., ".php")
+ * @param interpreter Path to the interpreter (e.g., "/usr/bin/php-cgi")
+ */
+void LocationConfig::_addCgiHandler(const std::string& extension, const std::string& interpreter)
+{
+    // Ensure extension starts with a dot
+    std::string processedExt = extension;
+    if (!extension.empty() && extension[0] != '.') {
+        processedExt = "." + extension;
+    }
+    
+    _cgiHandlers[processedExt] = interpreter;
+}
+
+/**
+ * @brief Parse a cgi_handler directive string in format ".ext1:/path1 .ext2:/path2"
+ * 
+ * @param directive The full directive string to parse
+ */
+void LocationConfig::_parseCgiHandlerDirective(const std::string& directive)
+{
+    std::string value = StringUtils::trim(directive);
+    std::stringstream ss(value);
+    std::string pair;
+    
+    // Parse each space-separated extension:interpreter pair
+    while (ss >> pair) {
+        // Find the colon separator
+        size_t colonPos = pair.find(':');
+        if (colonPos != std::string::npos && colonPos > 0 && colonPos < pair.length() - 1) {
+            std::string extension = pair.substr(0, colonPos);
+            std::string interpreter = pair.substr(colonPos + 1);
+            
+            // Add the handler mapping
+            _addCgiHandler(extension, interpreter);
+        }
+    }
+}
+
+/**
+ * @brief Get the interpreter path for a specific file extension
+ * 
+ * @param extension The file extension (with or without leading dot)
+ * @return std::string The interpreter path, or empty string if not found
+ */
+std::string LocationConfig::getInterpreterForExtension(const std::string& extension) const
+{
+    // Ensure extension has a leading dot
+    std::string processedExt = extension;
+    if (!extension.empty() && extension[0] != '.') {
+        processedExt = "." + extension;
+    }
+    
+    // First check the new _cgiHandlers map
+    std::map<std::string, std::string>::const_iterator it = _cgiHandlers.find(processedExt);
+    if (it != _cgiHandlers.end()) {
+        return it->second;
+    }
+    
+    // Fallback to legacy behavior if no specific handler found
+    // Check if this extension is in the _cgiExtentions list
+    for (std::vector<std::string>::const_iterator extIt = _cgiExtentions.begin(); 
+         extIt != _cgiExtentions.end(); ++extIt) {
+        if (*extIt == processedExt) {
+            // Found in extensions list, use the default CGI path
+            return _cgiPath;
+        }
+    }
+    
+    // No interpreter found for this extension
+    return "";
 }
 
 /**
@@ -156,6 +234,11 @@ void LocationConfig::parseLocationBlock(std::ifstream& file)
 		{
 			setCgiPath(StringUtils::extractDirectiveValue(line, key));
 		}
+		else if (key == "cgi_handler")
+		{
+			std::string value = StringUtils::extractDirectiveValue(line, key);
+			_parseCgiHandlerDirective(value);
+		}
 		else if (key == "upload_dir")
 		{
 			setUploadDir(StringUtils::extractDirectiveValue(line, key));
@@ -199,6 +282,12 @@ std::ostream&	operator<<( std::ostream& os, const LocationConfig& location )
 	os << "                    CGI Extensions: ";
 	for (std::vector<std::string>::const_iterator it = location.getCgiExtentions().begin(); it != location.getCgiExtentions().end(); ++it)
 		os << *it << " ";
+	os << std::endl;
+	
+	os << "                    CGI Handlers: ";
+	const std::map<std::string, std::string>& handlers = location.getCgiHandlers();
+	for (std::map<std::string, std::string>::const_iterator it = handlers.begin(); it != handlers.end(); ++it)
+		os << it->first << ":" << it->second << " ";
 	os << std::endl;
 
 	os << "                    Upload Directory: " << location.getUploadDir() << std::endl;

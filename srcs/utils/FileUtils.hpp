@@ -52,13 +52,37 @@ public:
     static bool fileExists(const std::string& path);
     
     /**
-     * @brief Check if a path is a directory
+     * @brief Check if a path exists as a directory, regardless of trailing slash
      * 
-     * @param path Directory path
+     * @param path Path to check
      * @return bool True if path is a directory
      */
     static bool isDirectory(const std::string& path);
     
+    /**
+     * @brief Check if a path exists as a file
+     * 
+     * @param path Path to check
+     * @return bool True if path is a file
+     */
+    static bool isFile(const std::string& path);
+
+    /**
+     * @brief Get a normalized path with a trailing slash
+     * 
+     * @param path Input path
+     * @return std::string Path with trailing slash
+     */
+    static std::string ensureTrailingSlash(const std::string& path);
+
+    /**
+     * @brief Remove trailing slash from path if present
+     * 
+     * @param path Input path 
+     * @return std::string Path without trailing slash
+     */
+    static std::string removeTrailingSlash(const std::string& path);
+
     /**
      * @brief Get the type of a file
      * 

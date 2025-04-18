@@ -1,5 +1,6 @@
 #include "CGIHandler.hpp"
 #include "../utils/StringUtils.hpp"  // Added for StringUtils::trim
+#include "../utils/DebugLogger.hpp"
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -12,7 +13,7 @@
 
 CGIHandler::CGIHandler()
     : _scriptPath(), _requestBody(), _responseBody(), _env(),
-      _cgiHeaders(), _pid(-1)
+      _cgiHeaders(), _pid(-1), _cgiExitStatus(0), _cgiExecutionError(false)
 {
     _inputPipe[0] = -1;
     _inputPipe[1] = -1;
@@ -31,34 +32,34 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
     _scriptPath = scriptPath;
     _requestBody = request.getBody();
     
-    // Get the CGI interpreter path from location config
-    std::string cgiPath = location.getCgiPath();
-    if (cgiPath.empty()) {
-        std::cerr << "CGI path not specified in location configuration" << std::endl;
-        return false;
-    }
+    // Reset error tracking fields
+    _cgiExecutionError = false;
+    _cgiExitStatus = 0;
     
-    // Check if file extension matches any of the configured CGI extensions
+    // Extract file extension
     std::string extension = "";
     size_t dotPos = scriptPath.find_last_of('.');
     if (dotPos != std::string::npos) {
         extension = scriptPath.substr(dotPos);
     }
     
-    bool isCgiExtension = false;
-    const std::vector<std::string>& cgiExtensions = location.getCgiExtentions();
-    for (std::vector<std::string>::const_iterator it = cgiExtensions.begin(); 
-         it != cgiExtensions.end(); ++it) {
-        if (*it == extension) {
-            isCgiExtension = true;
-            break;
-        }
-    }
+    // Get the appropriate interpreter based on the file extension
+    std::string interpreterPath = location.getInterpreterForExtension(extension);
     
-    if (!isCgiExtension) {
-        std::cerr << "File extension does not match configured CGI extensions" << std::endl;
+    // Check if we have a valid interpreter
+    if (interpreterPath.empty()) {
+        std::stringstream ss;
+        ss << "No interpreter found for extension: " << extension;
+        std::cerr << ss.str() << std::endl;
+        DebugLogger::logError(ss.str());
+        _cgiExecutionError = true;
         return false;
     }
+    
+    // Log the interpreter that will be used
+    std::stringstream interpreterLog;
+    interpreterLog << "Using interpreter: " << interpreterPath << " for extension: " << extension;
+    DebugLogger::log(interpreterLog.str());
     
     // Extract PATH_INFO (part of the URL path after the script)
     std::string requestPath = request.getPath();
@@ -84,7 +85,9 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
     // Create pipes for communication
     if (pipe(_inputPipe) < 0 || pipe(_outputPipe) < 0) {
         std::cerr << "Failed to create pipes for CGI: " << strerror(errno) << std::endl;
+        DebugLogger::logError("Failed to create pipes for CGI: " + std::string(strerror(errno)));
         _cleanup();
+        _cgiExecutionError = true;
         return false;
     }
     
@@ -99,16 +102,20 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
     flags = fcntl(_outputPipe[1], F_GETFL, 0);
     fcntl(_outputPipe[1], F_SETFL, flags | O_NONBLOCK);
     
-    // Execute CGI script
-    if (!_executeCGI(cgiPath)) {
+    // Execute CGI script with the appropriate interpreter
+    if (!_executeCGI(interpreterPath)) {
         std::cerr << "CGI execution failed" << std::endl;
+        DebugLogger::logError("CGI execution failed");
         _cleanup();
+        _cgiExecutionError = true;
         return false;
     }
     
     // Write request body to CGI
     if (!_requestBody.empty() && !_writeToCGI()) {
+        DebugLogger::logError("Failed to write request body to CGI");
         _cleanup();
+        _cgiExecutionError = true;
         return false;
     }
     
@@ -120,12 +127,35 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
     
     // Read CGI output
     if (!_readFromCGI()) {
+        DebugLogger::logError("Failed to read from CGI");
         _cleanup();
+        _cgiExecutionError = true;
         return false;
+    }
+    
+    // Check exit status from the CGI process
+    if (_cgiExitStatus != 0) {
+        std::stringstream ss;
+        ss << "CGI process exited with non-zero status: " << _cgiExitStatus;
+        DebugLogger::logError(ss.str());
+        
+        // If we don't have any content but have an error, set a more specific error
+        if (_responseBody.empty()) {
+            _cgiExecutionError = true;
+            _cleanup();
+            return false;
+        }
     }
     
     // Parse CGI output to separate headers and body
     _parseCGIOutput();
+    
+    // If execution error and no content, don't create a response
+    if (_cgiExecutionError && _responseBody.empty()) {
+        DebugLogger::logError("CGI execution error with no content");
+        _cleanup();
+        return false;
+    }
     
     // Set response based on CGI output
     // Set status code if provided by CGI, default to 200 OK
@@ -160,6 +190,13 @@ bool CGIHandler::executeCGI(const Request& request, const std::string& scriptPat
             it->first != "content-length") {
             response.setHeader(it->first, it->second);
         }
+    }
+    
+    // Log success or failure
+    if (_cgiExecutionError) {
+        DebugLogger::logError("CGI execution had errors but produced output");
+    } else {
+        DebugLogger::log("CGI execution successful for: " + scriptPath);
     }
     
     _cleanup();
@@ -232,12 +269,13 @@ void CGIHandler::_setupEnvironment(const Request& request, const std::string& sc
     }
 }
 
-bool CGIHandler::_executeCGI(const std::string& cgiPath)
+bool CGIHandler::_executeCGI(const std::string& interpreterPath)
 {
     _pid = fork();
     
     if (_pid < 0) {
         std::cerr << "Failed to fork for CGI: " << strerror(errno) << std::endl;
+        DebugLogger::logError("Failed to fork for CGI: " + std::string(strerror(errno)));
         return false;
     }
     
@@ -262,6 +300,23 @@ bool CGIHandler::_executeCGI(const std::string& cgiPath)
         close(_outputPipe[0]);
         close(_outputPipe[1]);
         
+        // Check if script exists and is accessible
+        if (access(_scriptPath.c_str(), F_OK) != 0) {
+            std::cerr << "CGI script does not exist: " << _scriptPath << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        
+        // Check if interpreter exists and is executable
+        if (access(interpreterPath.c_str(), F_OK) != 0) {
+            std::cerr << "CGI interpreter does not exist: " << interpreterPath << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        
+        if (access(interpreterPath.c_str(), X_OK) != 0) {
+            std::cerr << "CGI interpreter is not executable: " << interpreterPath << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        
         // Change directory to the script's directory
         std::string scriptDir = _scriptPath.substr(0, _scriptPath.find_last_of('/'));
         if (chdir(scriptDir.c_str()) < 0) {
@@ -285,13 +340,13 @@ bool CGIHandler::_executeCGI(const std::string& cgiPath)
         
         // Prepare command and arguments
         char* const argv[] = { 
-            const_cast<char*>(cgiPath.c_str()),    // Interpreter path (PHP-CGI)
-            const_cast<char*>(_scriptPath.c_str()), // Script path
+            const_cast<char*>(interpreterPath.c_str()),   // Interpreter path
+            const_cast<char*>(_scriptPath.c_str()),       // Script path
             NULL 
         };
         
         // Execute CGI script
-        execve(cgiPath.c_str(), argv, envp);
+        execve(interpreterPath.c_str(), argv, envp);
         
         // If execve returns, there was an error
         std::cerr << "Failed to execute CGI script: " << strerror(errno) << std::endl;
@@ -332,6 +387,7 @@ bool CGIHandler::_writeToCGI()
         }
         
         std::cerr << "Failed to write to CGI: " << strerror(errno) << std::endl;
+        DebugLogger::logError("Failed to write to CGI: " + std::string(strerror(errno)));
         return false;
     }
     
@@ -344,13 +400,14 @@ bool CGIHandler::_writeToCGI()
 bool CGIHandler::_readFromCGI()
 {
     if (_outputPipe[0] < 0) {
+        DebugLogger::logError("Output pipe not valid");
         return false;
     }
     
     char buffer[4096];
     ssize_t bytesRead;
-    int status;
     bool done = false;
+    bool processExited = false;
     
     // Read output until the process completes
     while (!done) {
@@ -365,35 +422,106 @@ bool CGIHandler::_readFromCGI()
         } else {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // No data available yet, check if the process has finished
-                int waitResult = waitpid(_pid, &status, WNOHANG);
-                
-                if (waitResult > 0) {
-                    // Process has finished
-                    if (WIFEXITED(status)) {
-                        // Process exited normally
-                        if (WEXITSTATUS(status) != 0) {
-                            std::cerr << "CGI process exited with non-zero status: " 
-                                      << WEXITSTATUS(status) << std::endl;
+                if (!processExited) {
+                    int status;
+                    int waitResult = waitpid(_pid, &status, WNOHANG);
+                    
+                    if (waitResult > 0) {
+                        // Process has exited, store the exit status
+                        processExited = true;
+                        
+                        if (WIFEXITED(status)) {
+                            // Process exited normally, store exit code
+                            _cgiExitStatus = WEXITSTATUS(status);
+                            if (_cgiExitStatus != 0) {
+                                // Non-zero exit code means there was an error
+                                std::cerr << "CGI process exited with non-zero status: " << _cgiExitStatus << std::endl;
+                                std::stringstream ss;
+                                ss << "CGI process exited with status: " << _cgiExitStatus;
+                                DebugLogger::logError(ss.str());
+                                _cgiExecutionError = true;
+                            }
+                        } else if (WIFSIGNALED(status)) {
+                            // Process was terminated by a signal
+                            _cgiExitStatus = 128 + WTERMSIG(status);
+                            std::cerr << "CGI process terminated by signal: " << WTERMSIG(status) << std::endl;
+                            std::stringstream ssig;
+                            ssig << "CGI process terminated by signal: " << WTERMSIG(status);
+                            DebugLogger::logError(ssig.str());
+                            _cgiExecutionError = true;
+                        } else {
+                            // Other types of termination
+                            _cgiExitStatus = 1; // Generic error
+                            std::cerr << "CGI process terminated abnormally" << std::endl;
+                            DebugLogger::logError("CGI process terminated abnormally");
+                            _cgiExecutionError = true;
                         }
-                    } else {
-                        std::cerr << "CGI process terminated abnormally" << std::endl;
+                        
+                        // If there's no more data to read, we're done
+                        if (_responseBody.empty()) {
+                            done = true;
+                        }
+                    } else if (waitResult < 0) {
+                        // Error checking process status
+                        std::cerr << "Error checking CGI process status: " << strerror(errno) << std::endl;
+                        DebugLogger::logError("Error checking CGI process status: " + std::string(strerror(errno)));
+                        _cgiExecutionError = true;
+                        return false;
                     }
                     
-                    done = true;
-                } else if (waitResult < 0) {
-                    std::cerr << "Error checking CGI process status: " << strerror(errno) << std::endl;
-                    return false;
+                    // If we've waited long enough with no data and the process hasn't exited,
+                    // consider killing it after a timeout (not implemented here)
                 }
                 
                 // Wait a bit for more data
                 usleep(1000); // 1ms
             } else {
+                // Error reading from pipe
                 std::cerr << "Failed to read from CGI: " << strerror(errno) << std::endl;
+                DebugLogger::logError("Failed to read from CGI: " + std::string(strerror(errno)));
+                _cgiExecutionError = true;
                 return false;
             }
         }
     }
     
+    // If we haven't already waited for the process, do it now
+    if (!processExited) {
+        int status;
+        pid_t waitResult = waitpid(_pid, &status, 0);
+        
+        if (waitResult > 0) {
+            if (WIFEXITED(status)) {
+                _cgiExitStatus = WEXITSTATUS(status);
+                if (_cgiExitStatus != 0) {
+                    std::cerr << "CGI process exited with non-zero status: " << _cgiExitStatus << std::endl;
+                    std::stringstream ss;
+                    ss << "CGI process exited with status: " << _cgiExitStatus;
+                    DebugLogger::logError(ss.str());
+                    _cgiExecutionError = true;
+                }
+            } else if (WIFSIGNALED(status)) {
+                _cgiExitStatus = 128 + WTERMSIG(status);
+                std::cerr << "CGI process terminated by signal: " << WTERMSIG(status) << std::endl;
+                std::stringstream ssig;
+                ssig << "CGI process terminated by signal: " << WTERMSIG(status);
+                DebugLogger::logError(ssig.str());
+                _cgiExecutionError = true;
+            } else {
+                _cgiExitStatus = 1;
+                std::cerr << "CGI process terminated abnormally" << std::endl;
+                DebugLogger::logError("CGI process terminated abnormally");
+                _cgiExecutionError = true;
+            }
+        } else if (waitResult < 0) {
+            std::cerr << "Error waiting for CGI process: " << strerror(errno) << std::endl;
+            DebugLogger::logError("Error waiting for CGI process: " + std::string(strerror(errno)));
+            _cgiExecutionError = true;
+            return false;
+        }
+    }
+    
+    // At this point, we should have all the output and the exit status
     return true;
 }
 
@@ -407,6 +535,7 @@ void CGIHandler::_parseCGIOutput()
     
     if (headerEnd == std::string::npos) {
         // No headers, assume entire output is body
+        DebugLogger::log("No headers found in CGI output, assuming entire output is body");
         return;
     }
     
@@ -481,6 +610,7 @@ void CGIHandler::_cleanup()
         
         if (result == 0) {
             // Process is still running, kill it
+            DebugLogger::logError("CGI process still running, sending SIGTERM");
             kill(_pid, SIGTERM);
             
             // Wait a bit for it to terminate
@@ -490,6 +620,7 @@ void CGIHandler::_cleanup()
             result = waitpid(_pid, &status, WNOHANG);
             if (result == 0) {
                 // Still running, force kill
+                DebugLogger::logError("CGI process still running after SIGTERM, sending SIGKILL");
                 kill(_pid, SIGKILL);
                 
                 // Wait for it to terminate
@@ -509,4 +640,14 @@ const std::string& CGIHandler::getResponseBody() const
 const std::map<std::string, std::string>& CGIHandler::getCGIHeaders() const
 {
     return _cgiHeaders;
+}
+
+bool CGIHandler::hasExecutionError() const
+{
+    return _cgiExecutionError;
+}
+
+int CGIHandler::getExitStatus() const
+{
+    return _cgiExitStatus;
 }

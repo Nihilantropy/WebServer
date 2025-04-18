@@ -201,6 +201,10 @@ private:
 
     // Request processing methods
     void _handleStaticFile();
+    bool _needsTrailingSlashRedirect(const std::string& fsPath, const std::string& requestPath);
+    void _redirectToPathWithSlash(const std::string& requestPath);
+    bool _tryServeIndexFile(const std::string& dirPath, const LocationConfig& location);
+
     size_t _getEffectiveMaxBodySize(const std::string& requestPath);
     void _handleDefault();
     void _handleError(int statusCode);

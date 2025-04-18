@@ -646,6 +646,50 @@ void Connection::_routeRequestByMethod()
     }
 }
 
+bool Connection::_needsTrailingSlashRedirect(const std::string& fsPath, const std::string& requestPath)
+{
+    // If path doesn't end with slash
+    if (requestPath.empty() || requestPath[requestPath.length() - 1] != '/') {
+        // Check if it's a directory
+        
+        std::cout << "EVVIVA _needsTrailingSlashRedirect\n";
+        return FileUtils::isDirectory(fsPath);
+    }
+    return false;
+}
+
+void Connection::_redirectToPathWithSlash(const std::string& requestPath)
+{
+    std::string redirectUrl = requestPath;
+    if (!redirectUrl.empty() && redirectUrl[redirectUrl.length() - 1] != '/') {
+        redirectUrl += '/';
+    }
+    
+    DebugLogger::log("Redirecting to add trailing slash: " + redirectUrl);
+    _response.redirect(redirectUrl, HTTP_STATUS_MOVED_PERMANENTLY);
+}
+
+bool Connection::_tryServeIndexFile(const std::string& dirPath, const LocationConfig& location)
+{
+    std::string indexFile = location.getIndex();
+    if (indexFile.empty()) {
+        DebugLogger::log("No index file configured for this location");
+        return false;
+    }
+    
+    std::string indexPath = FileUtils::ensureTrailingSlash(dirPath) + indexFile;
+    DebugLogger::log("Trying index file: " + indexPath);
+    
+    if (FileUtils::isFile(indexPath)) {
+        DebugLogger::log("Index file exists, serving: " + indexPath);
+        _serveFile(indexPath);
+        return true;
+    }
+    
+    DebugLogger::logError("Index file not found: " + indexPath);
+    return false;
+}
+
 void Connection::_handleStaticFile()
 {
     DebugLogger::log("Handling static file for path: " + _request.getPath());
@@ -665,48 +709,36 @@ void Connection::_handleStaticFile()
     std::string fsPath = FileUtils::resolvePath(requestPath, *location);
     DebugLogger::log("Resolved filesystem path: " + fsPath);
     
-    // Check if the path exists
-    if (!FileUtils::fileExists(fsPath)) {
-        DebugLogger::logError("File not found: " + fsPath);
-        
-        // Special handling for root path with index
-        if (requestPath == "/" || requestPath == "") {
-            std::string indexFile = location->getIndex();
-            if (!indexFile.empty()) {
-                std::string indexPath = fsPath;
-                if (indexPath[indexPath.length() - 1] != '/') {
-                    indexPath += '/';
-                }
-                indexPath += indexFile;
-                
-                DebugLogger::log("Trying index file: " + indexPath);
-                
-                if (FileUtils::fileExists(indexPath)) {
-                    DebugLogger::log("Index file exists, serving: " + indexPath);
-                    _serveFile(indexPath);
-                    return;
-                } else {
-                    DebugLogger::logError("Index file not found: " + indexPath);
-                }
-            } else {
-                DebugLogger::log("No index file configured for this location");
-            }
-        }
-        
-        _handleError(HTTP_STATUS_NOT_FOUND);
+    // Step 1: Check if this needs a trailing slash redirect (directory without slash)
+    if (_needsTrailingSlashRedirect(fsPath, requestPath)) {
+        _redirectToPathWithSlash(requestPath);
         return;
     }
     
-    // Handle directory
+    // Step 2: Check if the path exists
     if (FileUtils::isDirectory(fsPath)) {
+        // Path is a directory with proper trailing slash
         DebugLogger::log("Path is a directory: " + fsPath);
         _handleDirectory(fsPath, requestPath, *location);
         return;
+    } 
+    else if (FileUtils::isFile(fsPath)) {
+        // Path is a regular file
+        DebugLogger::log("Serving regular file: " + fsPath);
+        _serveFile(fsPath);
+        return;
     }
     
-    // Handle regular file
-    DebugLogger::log("Serving regular file: " + fsPath);
-    _serveFile(fsPath);
+    // Step 3: If we get here, try to serve index file for root requests
+    if (requestPath == "/" || requestPath == "") {
+        if (_tryServeIndexFile(fsPath, *location)) {
+            return;
+        }
+    }
+    
+    // If we get here, file not found
+    DebugLogger::logError("File not found: " + fsPath);
+    _handleError(HTTP_STATUS_NOT_FOUND);
 }
 
 void Connection::_handleDefault()
@@ -836,45 +868,30 @@ void Connection::_handleRedirection(const LocationConfig& location)
     _response.redirect(redirectUrl, statusCode);
 }
 
-void Connection::_handleDirectory(const std::string& fsPath, const std::string& requestPath, const LocationConfig& location)
+void Connection::_handleDirectory(const std::string& fsPath, const std::string& requestPath, 
+    const LocationConfig& location)
 {
     DebugLogger::log("Handling directory: " + fsPath + " for request path: " + requestPath);
-    
-    // Check if the request path ends with a slash
-    bool endsWithSlash = requestPath[requestPath.length() - 1] == '/';
-    DebugLogger::log("Path ends with slash: " + std::string(endsWithSlash ? "yes" : "no"));
-    
-    // If the path doesn't end with a slash, redirect to add the slash
-    if (!endsWithSlash) {
-        std::string redirectUrl = requestPath + "/";
-        DebugLogger::log("Redirecting to add trailing slash: " + redirectUrl);
-        _response.redirect(redirectUrl, HTTP_STATUS_MOVED_PERMANENTLY);
+
+    // Step 1: Ensure request path ends with slash
+    if (requestPath[requestPath.length() - 1] != '/') {
+        _redirectToPathWithSlash(requestPath);
         return;
     }
-    
-    // Look for an index file
-    std::string indexFile = location.getIndex();
-    if (!indexFile.empty()) {
-        std::string indexPath = fsPath + "/" + indexFile;
-        DebugLogger::log("Checking for index file: " + indexPath);
-        
-        if (FileUtils::fileExists(indexPath)) {
-            DebugLogger::log("Index file exists, serving: " + indexPath);
-            _serveFile(indexPath);
-            return;
-        } else {
-            DebugLogger::logError("Index file not found: " + indexPath);
-        }
+
+    // Step 2: Try to serve an index file
+    if (_tryServeIndexFile(fsPath, location)) {
+        return;
     }
-    
-    // If no index file or autoindex is off, return 403 Forbidden
+
+    // Step 3: If no index file or autoindex is off, return 403 Forbidden
     if (!location.getAutoIndex()) {
         DebugLogger::logError("No index file and autoindex is off, returning 403 Forbidden");
         _handleError(HTTP_STATUS_FORBIDDEN);
         return;
     }
-    
-    // Generate directory listing
+
+    // Step 4: Generate directory listing
     DebugLogger::log("Generating directory listing for: " + fsPath);
     std::string listing = FileUtils::generateDirectoryListing(fsPath, requestPath);
     if (listing.empty()) {
@@ -882,7 +899,7 @@ void Connection::_handleDirectory(const std::string& fsPath, const std::string& 
         _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
         return;
     }
-    
+
     // Send directory listing
     DebugLogger::log("Serving directory listing");
     _response.setStatusCode(HTTP_STATUS_OK);
@@ -939,16 +956,60 @@ void Connection::_serveFile(const std::string& fsPath)
 
 void Connection::_handleCgi(const std::string& fsPath, const LocationConfig& location)
 {
+    // Get file extension
+    std::string extension = "";
+    size_t dotPos = fsPath.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        extension = fsPath.substr(dotPos);
+    }
+    
+    // Check if we have an interpreter for this extension
+    std::string interpreter = location.getInterpreterForExtension(extension);
+    if (interpreter.empty()) {
+        // No interpreter found - fall back to legacy behavior
+        if (location.getCgiPath().empty()) {
+            DebugLogger::logError("No CGI interpreter found for extension: " + extension);
+            _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+            return;
+        } else {
+            interpreter = location.getCgiPath();
+            DebugLogger::log("Using legacy CGI path: " + interpreter);
+        }
+    } else {
+        DebugLogger::log("Using interpreter from cgi_handler: " + interpreter + " for " + extension);
+    }
+    
     // Create CGI handler
     CGIHandler cgiHandler;
     
     // Execute CGI script
     if (cgiHandler.executeCGI(_request, fsPath, location, _response)) {
-        // CGI execution successful, response has been set by CGIHandler
-        std::cout << "CGI execution successful for: " << fsPath << std::endl;
+        // CGI execution completed (may have errors but produced a response)
+        if (cgiHandler.hasExecutionError()) {
+            // CGI executed but with errors - check if we got a response body
+            if (_response.getBody().empty()) {
+                // No content produced, return 500 error
+                DebugLogger::logError("CGI execution error with no content produced: " + fsPath);
+                _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
+            } else {
+                // We got content despite errors, use the response as is
+                std::stringstream ss;
+                ss << "CGI execution completed with errors (exit code: " 
+                   << cgiHandler.getExitStatus() 
+                   << ") but produced content: " << fsPath;
+                DebugLogger::logError(ss.str());
+                
+                // The response has already been set by executeCGI
+                // Just log that we're using it despite errors
+                DebugLogger::log("Using CGI output despite execution errors");
+            }
+        } else {
+            // Successful execution
+            DebugLogger::log("CGI execution successful for: " + fsPath);
+        }
     } else {
-        // CGI execution failed
-        std::cerr << "CGI execution failed for: " << fsPath << std::endl;
+        // CGI execution failed completely
+        DebugLogger::logError("CGI execution failed for: " + fsPath);
         _handleError(HTTP_STATUS_INTERNAL_SERVER_ERROR);
     }
 }

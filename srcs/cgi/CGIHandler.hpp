@@ -25,6 +25,10 @@ private:
     int _inputPipe[2];  // Server to CGI
     int _outputPipe[2]; // CGI to Server
     
+    // Error tracking
+    int _cgiExitStatus;        // Exit status of the CGI process
+    bool _cgiExecutionError;   // Flag indicating execution error
+    
     // Set up environment variables from request
     void _setupEnvironment(const Request& request, const std::string& scriptPath, 
                           const std::string& pathInfo, const LocationConfig& location);
@@ -57,4 +61,10 @@ public:
     
     // Get CGI response headers
     const std::map<std::string, std::string>& getCGIHeaders() const;
+    
+    // Check if there was an execution error
+    bool hasExecutionError() const;
+    
+    // Get the exit status of the CGI process
+    int getExitStatus() const;
 };

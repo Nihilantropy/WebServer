@@ -1,10 +1,3 @@
-add this configuration cgi addition
-location /cgi-bin/ {
-    cgi_handler .php:/usr/bin/php-cgi .py:/usr/bin/python .sh:/bin/sh;
-}
+test cgi.
 
-This will use differetn interpreter for different file extentions
-
-Refactor host:port parsing and connection listening to allow multiple port for the same server
-
-Work on the clien max body size implementation to better refuse incompatible body sizes
+path resolution not working. fix it

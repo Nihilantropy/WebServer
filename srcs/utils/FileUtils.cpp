@@ -18,10 +18,54 @@ bool FileUtils::fileExists(const std::string& path)
 bool FileUtils::isDirectory(const std::string& path)
 {
     struct stat buffer;
-    if (stat(path.c_str(), &buffer) != 0) {
-        return false;
+
+    // Try the path as-is
+    if (stat(path.c_str(), &buffer) == 0 && S_ISDIR(buffer.st_mode)) {
+        std::cout << "EVVIVA isDir as is\n";
+        return true;
     }
-    return S_ISDIR(buffer.st_mode);
+    
+    // If path doesn't end with slash, try with slash
+    if (!path.empty() && path[path.length() - 1] != '/') {
+        if (stat((path + "/").c_str(), &buffer) == 0 && S_ISDIR(buffer.st_mode)) {
+            std::cout << "url request is a directory with no / at the end\n";
+            return true;
+        }
+    }
+    
+    // If path ends with slash, try without slash
+    if (!path.empty() && path[path.length() - 1] == '/') {
+        std::string withoutSlash = path.substr(0, path.length() - 1);
+        if (stat(withoutSlash.c_str(), &buffer) == 0 && S_ISDIR(buffer.st_mode)) {
+            std::cout << "url request is a directory with added / at the end\n";
+            return true;
+        }
+    }
+    
+    std::cout << "EVVIVA! no Directory\n";
+    return false;
+}
+
+bool FileUtils::isFile(const std::string& path)
+{
+    struct stat buffer;
+    return (stat(path.c_str(), &buffer) == 0 && S_ISREG(buffer.st_mode));
+}
+
+std::string FileUtils::ensureTrailingSlash(const std::string& path)
+{
+    if (path.empty() || path[path.length() - 1] != '/') {
+        return path + "/";
+    }
+    return path;
+}
+
+std::string FileUtils::removeTrailingSlash(const std::string& path)
+{
+    if (!path.empty() && path[path.length() - 1] == '/' && path != "/") {
+        return path.substr(0, path.length() - 1);
+    }
+    return path;
 }
 
 std::string FileUtils::getFileContents(const std::string& path)

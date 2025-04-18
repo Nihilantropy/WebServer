@@ -73,9 +73,10 @@ void LocationConfigValidator::_validateCgi(void) const
 {
     const std::vector<std::string>& cgiExtensions = _locationConfig.getCgiExtentions();
     const std::string& cgiPath = _locationConfig.getCgiPath();
+    const std::map<std::string, std::string>& cgiHandlers = _locationConfig.getCgiHandlers();
     
-    // If CGI extensions are specified, CGI path should also be specified
-    if (!cgiExtensions.empty() && cgiPath.empty()) {
+    // Legacy validation
+    if (!cgiExtensions.empty() && cgiPath.empty() && cgiHandlers.empty()) {
         throw ValidationException("CGI path must be specified when CGI extensions are defined for location: " + _locationConfig.getPath());
     }
     
@@ -84,6 +85,19 @@ void LocationConfigValidator::_validateCgi(void) const
         // Extension should start with a dot
         if ((*it)[0] != '.') {
             throw ValidationException("CGI extension must start with a dot: " + *it);
+        }
+    }
+    
+    // Validate cgi_handler mappings
+    for (std::map<std::string, std::string>::const_iterator it = cgiHandlers.begin(); it != cgiHandlers.end(); ++it) {
+        // Extension should start with a dot
+        if (it->first.empty() || it->first[0] != '.') {
+            throw ValidationException("CGI handler extension must start with a dot: " + it->first);
+        }
+        
+        // Interpreter path should not be empty
+        if (it->second.empty()) {
+            throw ValidationException("CGI handler interpreter path cannot be empty for extension: " + it->first);
         }
     }
 }
@@ -106,8 +120,6 @@ void LocationConfigValidator::_validateUploadDir(void) const
         if (!postAllowed) {
             throw ValidationException("Upload directory specified but POST method not allowed for location: " + _locationConfig.getPath());
         }
-        
-        // Could check if directory exists, but that might be more appropriate at server startup
     }
 }
 
